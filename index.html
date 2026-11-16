@@ -647,12 +647,12 @@ function agg(c, y, months) {
   o.hc_total = fin(o.hc_mgm) || fin(o.hc_staff) ? (o.hc_mgm || 0) + (o.hc_staff || 0) : null;
   if (full('trans_co') && full('trans_ticket')) { o.strike_trans = o.trans_co / o.trans_ticket; o.strike_adm = o.trans_co / o.adm; o.bill = o.co_net_k / o.trans_co; }
   o.partial = months.length - ok.length;
-  o.payroll_gap = o.cnt.payroll_mgm < months.length || o.cnt.payroll_staff < months.length;
+  o.payroll_gap = o.cnt.payroll_mgm < ok.length || o.cnt.payroll_staff < ok.length; // chỉ xét tháng có số (tháng rạp chưa hoạt động không tính là thiếu)
   if (!o.miss.payroll_mgm && o.payroll_gap) o.miss.payroll_mgm = o.miss.payroll_staff;
   o.miss.payroll = [...new Set([...(o.miss.payroll_mgm || []), ...(o.miss.payroll_staff || [])])].sort((x, y) => x - y);
   // Staff Cost Per Head = payroll for cinema staff / admission (như Performance Report)
-  o.scph = o.cnt.payroll_staff === months.length && o.adm ? (o.payroll_staff * 1000) / o.adm : null;
-  o.scph_hour = o.cnt.payroll_staff === months.length && o.hours_staff ? (o.payroll_staff * 1000) / o.hours_staff : null;
+  o.scph = o.cnt.payroll_staff === ok.length && o.adm ? (o.payroll_staff * 1000) / o.adm : null;
+  o.scph_hour = o.cnt.payroll_staff === ok.length && o.hours_staff ? (o.payroll_staff * 1000) / o.hours_staff : null;
   return o;
 }
 function prevMonths(y, months) { const L = months.length; return months.map((m) => { let mm = m - L, yy = y; while (mm < 1) { mm += 12; yy--; } return [yy, mm]; }); }
@@ -866,9 +866,9 @@ function overall(P) {
     const st = ['ctrl', 'cost_rev', 'payroll'].includes(k) ? star(cur, 'payroll') : ['payroll_mgm', 'payroll_staff', 'cleaning'].includes(k) ? star(cur, k) : '';
     return `<tr class="l${lv}${b ? ' b' : ''}"><td>${lab}${st}</td><td>${fmtK(kind, cur[k])}</td><td>${fmtK(kind, g(bp, k))}</td><td>${fmtK(kind, g(prev, k))}</td><td>${fmtK(kind, g(ly, k))}</td>
     ${bp && fin(bp[k]) ? dcell(kind, cur[k], bp[k]) : '<td>–</td>'}${ok2(cur, prev, k) ? dcell(kind, cur[k], g(prev, k)) : '<td>–</td>'}${ok2(cur, ly, k) ? dcell(kind, cur[k], g(ly, k)) : '<td>–</td>'}
-    <td class="sep">${fmtK(kind, g(ytd, k))}</td><td>${fmtK(kind, g(bpY, k))}</td><td>${fmtK(kind, g(ytdLy, k))}</td>${bpY && fin(bpY[k]) ? dcell(kind, g(ytd, k), bpY[k]) : '<td>–</td>'}${ok2(ytd, ytdLy, k) && !(ytdLy && ytdLy.partial > 0) ? dcell(kind, g(ytd, k), g(ytdLy, k)) : '<td>–</td>'}</tr>`; }).join('');
+    <td class="sep">${fmtK(kind, g(ytd, k))}</td><td>${fmtK(kind, g(bpY, k))}</td><td>${fmtK(kind, g(ytdLy, k))}</td>${bpY && fin(bpY[k]) ? dcell(kind, g(ytd, k), bpY[k]) : '<td>–</td>'}${ok2(ytd, ytdLy, k) ? dcell(kind, g(ytd, k), g(ytdLy, k)) : '<td>–</td>'}</tr>`; }).join('');
   const ytdL = plabel(P.y, P.ytdM);
-  const pst = (o) => (!o ? '' : o.partial > 0 ? `<span class="star" title="Kỳ so sánh thiếu ${o.partial} tháng dữ liệu">*</span>` : '');
+  const pst = (o) => (!o ? '' : o.partial > 0 ? `<span class="star" title="Năm trước không có số: ${(o.miss.adm || []).map(mlab).join(', ')}. So sánh theo các tháng có số.">*</span>` : '');
   const table = `<div class="card tw"><table><thead><tr><th rowspan="2">Chỉ tiêu</th><th class="grp" colspan="7">${plabel(P.y, P.M)}</th><th class="grp sep" colspan="5">YTD ${ytdL}</th></tr>
   <tr><th>Actual</th><th>BP</th><th>Kỳ trước${pst(prev)}</th><th>LY${pst(ly)}</th><th>vs BP</th><th>vs Kỳ trước</th><th>vs LY</th><th class="sep">Actual</th><th>BP</th><th>LY${pst(ytdLy)}</th><th>vs BP</th><th>vs LY</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   return table;
@@ -888,7 +888,7 @@ function yearView(P) {
   const [k, lab, kind] = YM.find((x) => x[0] === S.ym);
   const a = yearSeries(P.c, P.y, k), l = yearSeries(P.c, P.y - 1, k), b = bpSeries(P.c, P.y, k), hasB = b.some(fin), hasL = l.some(fin);
   const yv = P.ytd ? P.ytd[k] : null, yl = P.ytdLy ? P.ytdLy[k] : null, yb = hasB && P.bpY ? P.bpY[k] : null;
-  const gapC = PGK.has(k) && P.ytd && P.ytd.payroll_gap, gapL = gapC || (PGK.has(k) && P.ytdLy && P.ytdLy.payroll_gap) || (P.ytdLy && P.ytdLy.partial > 0), gap = gapC;
+  const gapC = PGK.has(k) && P.ytd && P.ytd.payroll_gap, gapL = gapC || (PGK.has(k) && P.ytdLy && P.ytdLy.payroll_gap), gap = gapC;
   const A = (v) => fmtK(kind, absK(kind, v));
   const sel = `<div class="ysel"><label for="ymSel">Chỉ tiêu</label><select id="ymSel">${ks.map(([kk, ll]) => `<option value="${kk}"${kk === k ? ' selected' : ''}>${ll}</option>`).join('')}</select>
     <span class="lg" style="margin:0"><span><i style="background:var(--blue)"></i>${P.y}</span>${hasL ? `<span><i style="background:#B4B8BD"></i>${P.y - 1} (LY)</span>` : ''}${hasB ? `<span><i style="background:#17191C;height:2px"></i>BP</span>` : ''}</span></div>`;
@@ -904,7 +904,7 @@ function yearView(P) {
   const isCost = COSTK.has(kind); const good = (d) => (isCost ? d <= 0 : d >= 0);
   if (!gapL && fin(yv) && fin(yl)) { const d = delta(kind, yv, yl); add(good(d) ? 'good' : 'bad', `${lab} ${ytdL}: ${A(yv)}, ${dfmt(kind, d)} so với cùng kỳ.`); }
   else if (!hasL) add('flat', PGK.has(k) ? `Năm ${P.y - 1} chưa có file lương & headcount nên chưa so cùng kỳ payroll.` : `Chưa có số ${lab} năm ${P.y - 1} để so cùng kỳ.`);
-  else if (P.ytdLy && P.ytdLy.partial > 0) add('flat', `${ytdL} năm ${P.y - 1} thiếu ${P.ytdLy.partial} tháng số liệu, chưa so cùng kỳ lũy kế.`);
+  if (P.ytdLy && P.ytdLy.partial > 0) add('flat', `${ytdL} năm ${P.y - 1} chỉ có số ${P.ytdM.length - P.ytdLy.partial}/${P.ytdM.length} tháng (${(P.ytdLy.miss.adm || []).map(mlab).join(', ')} không có số), so cùng kỳ lũy kế theo các tháng có số.`);
   if (!gap && fin(yv) && fin(yb)) { const d = delta(kind, yv, yb); add(good(d) ? 'good' : 'bad', `${ytdL} ${dfmt(kind, d)} so với BP (${A(yb)}).`); }
   const pts = a.map((v, i) => [i + 1, v]).filter(([, v]) => fin(v));
   if (pts.length >= 2 && !['hc_total', 'hours_staff'].includes(k)) { const s2 = pts.slice().sort((x, y) => absK(kind, y[1]) - absK(kind, x[1])); const hi = s2[0], lo = s2[s2.length - 1];
@@ -1087,7 +1087,7 @@ function opex(P) {
   // monthly cost table grouped
   const ML = [['a. Payroll', 'payroll', 1], ['Payroll for Manager', 'payroll_mgm'], ['Lương phụ trội MGM', 'ot_mgm', 3], ['Payroll for cinema staff', 'payroll_staff'], ['Lương phụ trội staff', 'ot_staff', 3], ['b. Stationary', 'stationery_total', 1], ['c. Utilities', 'utilities', 1], ['Electricity and power', 'electricity'], ['Chỉ số điện (kWh)', 'elec_index', 4], ['kWh / Operation Hour', 'elec_ph', 5], ['Cleaning (dịch vụ & DCVS)', 'cleaning'], ['Care', 'care'], ['Others', 'others'], ['Controllable Cost', 'ctrl', 2]];
   const recs = Array.from({ length: 12 }, (_, i) => agg(P.c, P.y, [i + 1]));
-  const yc = P.ytd, yl = P.ytdLy && !P.ytdLy.partial ? P.ytdLy : null; const okv = (o, f) => o && fin(o[f]) && !(['ctrl', 'payroll'].includes(f) && o.payroll_gap) ? Math.abs(o[f]) : null;
+  const yc = P.ytd, yl = P.ytdLy; const okv = (o, f) => o && fin(o[f]) && !(['ctrl', 'payroll'].includes(f) && o.payroll_gap) ? Math.abs(o[f]) : null;
   const mt = `<div class="card tw" style="margin-top:12px"><div class="ct">Chi phí theo tháng ${P.y}</div><table><thead><tr><th>Hạng mục</th>${recs.map((x, i) => `<th class="${P.M.includes(i + 1) ? 'on' : ''}">${mlab(i + 1)}</th>`).join('')}<th class="sep">YTD</th><th>YTD LY</th><th>vs LY</th></tr></thead><tbody>${ML.map(([l, f, t]) => { const fm = t === 5 ? fR : f0; const ok = (x) => x && fin(x[f]) && !(f === 'ctrl' && x.payroll_gap); return `<tr class="${t === 2 ? 'tot' : t === 1 ? 'grp b' : t >= 3 ? 'l2' : 'l1'}"><td>${l}</td>${recs.map((x) => `<td>${ok(x) ? fm(Math.abs(x[f])) : '–'}</td>`).join('')}<td class="sep">${t === 5 ? fR(yc && yc.elec_ph) : fm(okv(yc, f))}</td><td>${t === 5 ? fR(yl && yl.elec_ph) : fm(okv(yl, f))}</td><td class="${tone('cost', ch(t === 5 ? yc && yc.elec_ph : okv(yc, f), t === 5 ? yl && yl.elec_ph : okv(yl, f)))}">${dp(ch(t === 5 ? yc && yc.elec_ph : okv(yc, f), t === 5 ? yl && yl.elec_ph : okv(yl, f)))}</td></tr>`; }).join('')}</tbody></table></div>`;
   return `${t1}${band}${mt}`;
 }
@@ -1373,7 +1373,7 @@ function fillCinema(sh, ci, P, S0) {
   ['B4', 'B113', 'B124', 'B134'].forEach((r) => put(r, xlDate(y, M[0])));
   [['L6', 'N6'], ['L58', 'M58'], ['L89', 'M89'], ['N115', 'Q115'], ['N126', 'Q126'], ['N136', 'Q136']].forEach(([a, b]) => { put(a, y); put(b, y - 1); });
   // ---- 1. Overall ----
-  const ok = (o) => (o && !(o.partial > 0) ? o : null);
+  const ok = (o) => o;
   const cols = [['C', P.cur], ['D', P.bp], ['E', P.prev], ['F', P.ly], ['L', P.ytd], ['M', P.bpY], ['N', ok(P.ytdLy)]];
   const OV = [[7, 'adm'], [10, 'nbo'], [13, 'nco'], [15, 'strike_trans'], [16, 'strike_adm'], [17, 'bill'], [21, 'payroll_mgm'], [22, 'payroll_staff'], [24, 'stationery_total'], [26, 'electricity'], [27, 'cleaning'], [28, 'others']];
   cols.forEach(([L, o]) => OV.forEach(([r, k]) => {
@@ -1460,7 +1460,7 @@ function extras(sh, ci, P, V, VL, S0) {
   r++; NT.coitems.forEach((f) => noteRow(f)); r += 2;
   // Chi phí theo tháng
   sec(`Chi phí theo tháng ${P.y} (triệu VND)`);
-  const mx = Math.max(...P.M), recs = Array.from({ length: 12 }, (_, i) => agg(c, P.y, [i + 1])), ly = P.ytdLy && !P.ytdLy.partial ? P.ytdLy : null;
+  const mx = Math.max(...P.M), recs = Array.from({ length: 12 }, (_, i) => agg(c, P.y, [i + 1])), ly = P.ytdLy;
   head(['Hạng mục', ...Array.from({ length: 12 }, (_, i) => mlab(i + 1)), `YTD ${mlab(1)}–${mlab(mx)}`, 'YTD LY', 'vs LY']);
   const LE = colLet(2 + mx);
   const ML = [['Payroll', 'payroll', 1], ['Payroll for Manager', 'payroll_mgm'], ['Lương phụ trội MGM', 'ot_mgm'], ['Payroll for cinema staff', 'payroll_staff'], ['Lương phụ trội staff', 'ot_staff'], ['Stationary', 'stationery_total', 1], ['Utilities', 'utilities', 1], ['Electricity and power', 'electricity'], ['Electricity index (kWh)', 'elec_index', 0, 'int'], ['Operation Hour', 'op_hour', 0, 'int'], ['Cleaning (dịch vụ & DCVS)', 'cleaning'], ['Care', 'care'], ['Others', 'others'], ['kWh thấp điểm', 'kwh_low', 0, 'int'], ['kWh trung điểm', 'kwh_mid', 0, 'int'], ['kWh cao điểm', 'kwh_peak', 0, 'int']];
