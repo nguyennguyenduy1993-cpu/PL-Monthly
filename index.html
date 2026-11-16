@@ -162,6 +162,8 @@ body.locked>*:not(.lock){visibility:hidden}
 .lbox .lrem{display:flex;align-items:center;gap:8px;font-weight:400}
 .lerr{min-height:16px;font-size:12px;color:#B3402F}.lbox .btn{justify-content:center;padding:10px}
 #bOut{margin-right:8px;margin-left:auto}#bOut+#bData{margin-left:0}
+
+.kwh .seg{white-space:nowrap;overflow:hidden;text-overflow:clip}.kwh .seg.sm{font-size:9.5px;letter-spacing:-.2px}
 </style>
 </head>
 <body>
@@ -527,6 +529,9 @@ const CIN = [
   { code: 'BRI', name: 'Galaxy GO Bà Rịa', short: 'GO Bà Rịa', cluster: 'Bà Rịa – Vũng Tàu', mk: 'Go! Mall Ba Ria, GLX', kw: ['ba ria'] },
 ];
 const CI = Object.fromEntries(CIN.map((c) => [c.code, c]));
+// rạp tài khoản đang đăng nhập được xem (AM: cả 6 rạp; tài khoản rạp: đúng 1 rạp)
+const CINV = () => (window.ACC ? CIN.filter((c) => window.ACC.cinemas.includes(c.code)) : CIN);
+const canSee = (code) => CINV().some((c) => c.code === code);
 const SECS = [['overall', 'Overall'], ['year', '12 tháng'], ['market', 'Market share'], ['film', 'Top film'], ['ticket', 'Ticket type'], ['coclass', 'CO sale by item class'], ['coitems', 'Top 10 CO items'], ['opex', 'OPEX']];
 const S = { cin: localStorage.getItem('plm_cin') || 'QT', year: 2026, months: null, up: { vista: {}, bp: {}, market: {}, hc: {}, plan: {} }, fb: null };
 const K = (c, y, m) => `${c}_${y}_${m}`;
@@ -1019,10 +1024,12 @@ function opex(P) {
   const kb = (y, m) => { const x = plGet(P.c, y, m); return x ? { m, low: Math.abs(x.kwh_low || 0), mid: Math.abs(x.kwh_mid || 0), peak: Math.abs(x.kwh_peak || 0) } : null; };
   const B = Array.from({ length: 12 }, (_, i) => kb(P.y, i + 1)).filter((b) => b && b.low + b.mid + b.peak > 0);
   const lyK = (m) => { const b = kb(P.y - 1, m); const t = b ? b.low + b.mid + b.peak : 0; return t || null; };
-  const seg = (val, T, c) => `<div class="seg ${c}" style="width:${(val / T) * 100}%" title="${f0(val)} kWh · ${pc(val / T)}">${val / T >= 0.13 ? `${f0(val)} · ${pc(val / T, 0)}` : val / T >= 0.07 ? pc(val / T, 0) : ''}</div>`;
+  // % từng khung làm tròn 1 lần; khung trung điểm = 100% − thấp − cao để 3 phần luôn cộng đủ 100%
+  const shares = (b) => { const T = b.low + b.mid + b.peak; const pl = Math.round((b.low / T) * 100), pp = Math.round((b.peak / T) * 100); return { T, low: pl, peak: pp, mid: 100 - pl - pp }; };
+  const seg = (val, pct, T, c) => `<div class="seg ${c}${pct < 10 ? ' sm' : ''}" style="width:${(val / T) * 100}%" title="${f0(val)} kWh · ${pct}%">${f0(val)} · ${pct}%</div>`;
   const band = B.length ? `<div class="card" style="margin-top:12px"><div class="ct">Điện theo khung giờ ${P.y} (kWh)</div>
   <div class="kwh"><div class="kh"><span>Tháng</span><span></span><span>Thấp điểm</span><span>Trung điểm</span><span>Cao điểm</span><span>Tổng kWh</span><span>LY</span><span>vs LY</span></div>
-  ${B.map((b) => { const T = b.low + b.mid + b.peak; return `<div class="kr${P.M.includes(b.m) ? ' on' : ''}"><span>${mlab(b.m)}</span><div class="bar2">${seg(b.low, T, 'c6')}${seg(b.mid, T, 'c3')}${seg(b.peak, T, 'c8')}</div><span>${f0(b.low)}</span><span>${f0(b.mid)}</span><span>${f0(b.peak)}</span><span><b>${f0(T)}</b></span><span>${f0(lyK(b.m))}</span><span class="${tone('cost', ch(T, lyK(b.m)))}">${dp(ch(T, lyK(b.m)))}</span></div>`; }).join('')}</div>
+  ${B.map((b) => { const s = shares(b), T = s.T; return `<div class="kr${P.M.includes(b.m) ? ' on' : ''}"><span>${mlab(b.m)}</span><div class="bar2">${seg(b.low, s.low, T, 'c6')}${seg(b.mid, s.mid, T, 'c3')}${seg(b.peak, s.peak, T, 'c8')}</div><span>${f0(b.low)}</span><span>${f0(b.mid)}</span><span>${f0(b.peak)}</span><span><b>${f0(T)}</b></span><span>${f0(lyK(b.m))}</span><span class="${tone('cost', ch(T, lyK(b.m)))}">${dp(ch(T, lyK(b.m)))}</span></div>`; }).join('')}</div>
   <div class="lg"><span><i class="c6"></i>Thấp điểm</span><span><i class="c3"></i>Trung điểm</span><span><i class="c8"></i>Cao điểm</span></div></div>` : '';
   // monthly cost table grouped
   const ML = [['a. Payroll', 'payroll', 1], ['Payroll for Manager', 'payroll_mgm'], ['Lương phụ trội MGM', 'ot_mgm', 3], ['Payroll for cinema staff', 'payroll_staff'], ['Lương phụ trội staff', 'ot_staff', 3], ['b. Stationary', 'stationery_total', 1], ['c. Utilities', 'utilities', 1], ['Electricity and power', 'electricity'], ['Chỉ số điện (kWh)', 'elec_index', 4], ['kWh / Operation Hour', 'elec_ph', 5], ['Cleaning (dịch vụ & DCVS)', 'cleaning'], ['Care', 'care'], ['Others', 'others'], ['Controllable Cost', 'ctrl', 2]];
@@ -1130,18 +1137,19 @@ async function uploadAny(files) {
     res.push(r);
   }
   $('#upRes', m).innerHTML = `<div class="tw"><table><thead><tr><th class="t">File</th><th class="t">Loại</th><th class="t">Nội dung</th><th class="t">Kiểm tra</th></tr></thead><tbody>${res.map((r) => `<tr><td class="t">${esc(r.file)}</td><td class="t">${esc(r.type)}</td><td class="t">${esc(r.what)}</td><td class="t">${r.ok ? (r.check ? `<span class="bad">${esc(r.check)}</span>` : `<span class="ok">Khớp</span>${r.note ? ` <span class="flat">· ${r.note}</span>` : ''}`) : `<span class="bad">${esc(r.check || 'Không đọc được')}</span>`}</td></tr>`).join('')}</tbody></table></div>${S.fb ? '' : '<div class="msg warn">Chưa kết nối Firebase: dữ liệu chỉ lưu trên máy này.</div>'}`;
+  ['vista', 'bp', 'hc', 'plan'].forEach((k) => Object.keys(save[k]).forEach((key) => { if (!canSee(key.split('_')[0])) delete save[k][key]; })); // tài khoản rạp chỉ ghi số của rạp mình
   const b = $('#upSave', m); b.disabled = !res.some((r) => r.ok);
   b.onclick = async () => { b.disabled = true;
     try { for (const k of ['vista', 'bp', 'market', 'hc', 'plan']) if (Object.keys(save[k]).length) await persist(k, save[k]);
       m.remove(); toast('Đã lưu ' + res.filter((r) => r.ok).length + ' file');
-      const v0 = Object.values(save.vista)[0]; if (v0) { S.cin = v0.cinema; S.year = v0.year; S.months = [v0.month]; } render();
+      const v0 = Object.values(save.vista)[0]; if (v0 && canSee(v0.cinema)) { S.cin = v0.cinema; S.year = v0.year; S.months = [v0.month]; } render();
     } catch (e) { b.disabled = false; toast('Lỗi lưu: ' + e.message, 5000); } };
 }
 
 /* ---------- Data modal: status + Firebase ---------- */
 function dataModal() {
   const y = S.year;
-  const st = `<div class="tw"><table><thead><tr><th>Rạp</th>${Array.from({ length: 12 }, (_, k) => `<th>${mlab(k + 1)}</th>`).join('')}</tr></thead><tbody>${CIN.map((c) => `<tr><td>${c.code}</td>${Array.from({ length: 12 }, (_, k) => { const p = plGet(c.code, y, k + 1), pl = planGet(c.code, y, k + 1), v = vGet(c.code, y, k + 1), h = hcGet(c.code, y, k + 1); const mk = c.cluster && mkAll().some((r) => r.cluster === c.cluster && r.year === y && r.month === k + 1);
+  const st = `<div class="tw"><table><thead><tr><th>Rạp</th>${Array.from({ length: 12 }, (_, k) => `<th>${mlab(k + 1)}</th>`).join('')}</tr></thead><tbody>${CINV().map((c) => `<tr><td>${c.code}</td>${Array.from({ length: 12 }, (_, k) => { const p = plGet(c.code, y, k + 1), pl = planGet(c.code, y, k + 1), v = vGet(c.code, y, k + 1), h = hcGet(c.code, y, k + 1); const mk = c.cluster && mkAll().some((r) => r.cluster === c.cluster && r.year === y && r.month === k + 1);
     return `<td title="BP2026 Cinema ${pl ? '✓' : '✗'} · Ops Business Plan ${p ? '✓' : '✗'} · Lương & headcount ${h ? '✓' : '✗'} · PDF Vista ${v ? '✓' : '✗'} · Thị phần ${mk ? '✓' : '✗'}"><span class="${pl ? 'ok' : 'no'}">K</span><span class="${p ? 'ok' : 'no'}">B</span><span class="${h ? 'ok' : 'no'}">H</span><span class="${v ? 'ok' : 'no'}">P</span><span class="${mk ? 'ok' : 'no'}">M</span></td>`; }).join('')}</tr>`).join('')}</tbody></table></div>
   <div class="lg"><span><b class="ok">K</b> BP2026 (kế hoạch)</span><span><b class="ok">B</b> Ops Business Plan</span><span><b class="ok">H</b> Lương & headcount</span><span><b class="ok">P</b> PDF Vista</span><span><b class="ok">M</b> Thị phần</span><span>${S.fb ? 'Đã đồng bộ Firebase' : 'Chưa kết nối Firebase'}</span></div>`;
   modal(`<h3>Trạng thái dữ liệu ${y}</h3>${st}<div class="mfoot"><button class="btn" data-close>Đóng</button></div>`);
@@ -1151,8 +1159,9 @@ function dataModal() {
 function init() {
   loadCache();
   if (!CI[S.cin]) S.cin = 'QT';
-  $('#tabs').innerHTML = CIN.map((c) => `<button data-c="${c.code}" title="${esc(c.name)}">${esc(c.short)}</button>`).join('');
-  $('#tabs').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; S.cin = b.dataset.c; localStorage.setItem('plm_cin', S.cin); render(); window.scrollTo(0, 0); };
+  if (!canSee(S.cin)) S.cin = CINV()[0].code;
+  $('#tabs').innerHTML = CINV().map((c) => `<button data-c="${c.code}" title="${esc(c.name)}">${esc(c.short)}</button>`).join('');
+  $('#tabs').onclick = (e) => { const b = e.target.closest('button'); if (!b || !canSee(b.dataset.c)) return; S.cin = b.dataset.c; localStorage.setItem('plm_cin', S.cin); render(); window.scrollTo(0, 0); };
   const ys = [...new Set([...SEED.pl.map((r) => r.year), ...Object.values(S.up.bp).map((r) => r.year), 2026])].sort();
   $('#yearSel').innerHTML = ys.map((y) => `<option value="${y}">${y}</option>`).join('');
   $('#yearSel').onchange = (e) => { S.year = +e.target.value; const a = availMonths(S.cin, S.year); S.months = S.months.filter((m) => a.includes(m)); if (!S.months.length) S.months = [a.length ? a[a.length - 1] : 1]; render(); };
@@ -1209,7 +1218,7 @@ async function exportExcel() {
   wb.calcProperties.fullCalcOnLoad = true;
   const sm = wb.addWorksheet('Tóm tắt', { properties: { tabColor: { argb: 'FF2F6BD4' } } });
   const sheetRefs = {};
-  for (const ci of CIN) {
+  for (const ci of CINV()) {
     const c = ci.code, P = period(c); const ws = wb.addWorksheet(c); const NT = sectionNotes(c, P, vistaPeriod(c, P.y, P.M)); const VL = (() => { const v = vistaPeriod(c, P.y - 1, P.M); return v && v.complete ? v : null; })();
     sheetBase(ws, [34, 13, 13, 13, 13, 11, 11, 11, 14, 13, 13, 11, 11]);
     title(ws, `Cinema Monthly P&L Report – ${ci.name}`, `Kỳ ${per} · Kỳ trước ${pairsLabel(P.prevPairs)} · LY ${plabel(S.year - 1, P.M)} · Triệu VND; ATP, SPP, Bill: nghìn VND`);
@@ -1367,24 +1376,28 @@ async function exportExcel() {
 
   // Summary sheet (first)
   sheetBase(sm, [26, 14, 14, 11, 11, 14, 12, 14, 11]);
-  title(sm, `Tóm tắt P&L – 6 rạp · ${per}`, `Số lấy từ từng sheet rạp. Triệu VND; ATP, SPP: nghìn VND. Xuất lúc ${new Date().toLocaleString('vi-VN')}`);
+  title(sm, `Tóm tắt P&L – ${CINV().length > 1 ? CINV().length + ' rạp' : CINV()[0].name} · ${per}`, `Số lấy từ từng sheet rạp. Triệu VND; ATP, SPP: nghìn VND. Xuất lúc ${new Date().toLocaleString('vi-VN')}`);
   let r = 4; blockTitle(sm, r, 'Kết quả kỳ'); r++;
   header(sm, r, ['Rạp', 'Admission', 'Total Revenue', 'ATP', 'SPP', 'Controllable Cost', '% Cost / Rev', 'Revenue LY', 'Revenue vs LY']); r++;
-  CIN.forEach((ci) => { const s = sheetRefs[ci.code]; put(sm, r, 0, ci.name); if (!s) { put(sm, r, 1, 'Chưa có số'); r++; return; } const q = (x) => F(`'${ci.code}'!${x}`);
+  CINV().forEach((ci) => { const s = sheetRefs[ci.code]; put(sm, r, 0, ci.name); if (!s) { put(sm, r, 1, 'Chưa có số'); r++; return; } const q = (x) => F(`'${ci.code}'!${x}`);
     put(sm, r, 1, q(s.adm), NF.f0); put(sm, r, 2, q(s.rev), NF.f1); put(sm, r, 3, q(s.atp), NF.f1); put(sm, r, 4, q(s.spp), NF.f1); put(sm, r, 5, q(s.ctrl), NF.f1); put(sm, r, 6, q(s.cr), NF.pct); put(sm, r, 7, q(s.revLy), NF.f1); put(sm, r, 8, q(s.revVsLy), NF.var); r++; });
   r += 1; blockTitle(sm, r, 'Phát hiện & action plan'); r++;
   sm.getColumn(3).width = 14;
   header(sm, r, ['Rạp', 'Hạng mục', 'Phát hiện', '', '', 'Hành động đề xuất', '', 'Phụ trách', 'Hạn']); sm.mergeCells(r, 3, r, 5); sm.mergeCells(r, 6, r, 7); r++;
   const SN = { overall: 'Overall', market: 'Market share', film: 'Top film', ticket: 'Ticket type', coclass: 'CO class', coitems: 'Top 10 CO', opex: 'OPEX' };
-  CIN.forEach((ci) => { const P = period(ci.code); if (!P.cur) return; const NT = sectionNotes(ci.code, P, vistaPeriod(ci.code, P.y, P.M));
+  CINV().forEach((ci) => { const P = period(ci.code); if (!P.cur) return; const NT = sectionNotes(ci.code, P, vistaPeriod(ci.code, P.y, P.M));
     Object.entries(NT).flatMap(([s, L]) => L.filter((f) => f.lv === 'bad' || f.lv === 'warn').map((f) => ({ ...f, s }))).forEach((f) => {
     put(sm, r, 0, ci.code); const lv = put(sm, r, 1, SN[f.s]); lv.font = { name: 'Arial', size: 10, bold: true, color: { argb: LC[f.lv] } };
     put(sm, r, 2, f.text, null, { wrap: true }); sm.mergeCells(r, 3, r, 5); put(sm, r, 5, f.action || '–', null, { wrap: true }); sm.mergeCells(r, 6, r, 7); put(sm, r, 7, f.action ? 'CM ' + ci.code : ''); put(sm, r, 8, '');
     sm.getRow(r).height = Math.max(30, Math.ceil(Math.max(f.text.length, (f.action || '').length) / 48) * 14); r++; }); });
 
   const buf = await wb.xlsx.writeBuffer();
-  const name = `Cinema_Performance_Report_${per.replace(/[\/,\s–]+/g, '_')}.xlsx`;
+  const name = `Cinema_Performance_Report_${CINV().length === 1 ? CINV()[0].code + "_" : ""}${per.replace(/[\/,\s–]+/g, '_')}.xlsx`;
   const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  if (window.claude && window.claude.use) { // trong Claude artifact: tải qua capability downloads
+    const dl = await window.claude.use('downloads').catch(() => null);
+    if (dl) { try { await dl.save({ filename: name, data: blob }); toast('Đã xuất ' + name); } catch (e) { toast('Chưa tải được file: ' + (e.message || e), 5000); } return; }
+  }
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   toast('Đã xuất ' + name);
 }
@@ -1392,6 +1405,12 @@ async function exportExcel() {
 /* Màn hình khóa – tài khoản theo vai trò. Mật khẩu chỉ lưu dạng SHA-256(user:pass). */
 const ACCOUNTS = [
   { role: 'AM', label: 'Area Manager', user: 'duynh', hash: '6bd196cc14c8a3d0ec552cf8f16bfeee125830b9c277113ce7cccecac0887dd8', cinemas: ['QT', 'TC', 'NVQ', 'TrC', 'PHI', 'BRI'] },
+  { role: 'QT', label: 'Rạp Quang Trung', user: 'quanna', hash: 'c9f6ae4c0fac3b6c1d98eef63e51366be2fa8c7857d0dd53b16429efe02412d1', cinemas: ['QT'] },
+  { role: 'TC', label: 'Rạp Trung Chánh', user: 'vanttt', hash: 'ad0252dda39c432958ef61d04d55b880d4cb00d26197380a33d5d1fbc222033c', cinemas: ['TC'] },
+  { role: 'NVQ', label: 'Rạp Nguyễn Văn Quá', user: 'thynbu', hash: '055dfa4eedd8737e825644cdc0cc8a9f0efb90fdb4ef204ed8c5d9f65a1d62a1', cinemas: ['NVQ'] },
+  { role: 'TrC', label: 'Rạp Trường Chinh', user: 'tuyenlk', hash: 'a15c5e94a2a37b3d643239985d8fba4c01968ca7ba1a9eb8d77ee10414361cee', cinemas: ['TrC'] },
+  { role: 'BRI', label: 'Rạp Bà Rịa', user: 'tronglt', hash: 'c92caa467602ae1534618f797c2442a3d79d31f9e8f8abe9fe2b21303c915c24', cinemas: ['BRI'] },
+  { role: 'PHI', label: 'Rạp Phan Huy Ích', user: 'thanhhv', hash: 'ad73bdb36e160ca7665af98b856a3430f215c6803f31ed08a5ebf5b46b6ccf89', cinemas: ['PHI'] },
 ];
 const AUTH_KEY = 'plm_auth';
 async function sha256(t) { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t)); return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join(''); }
@@ -1418,7 +1437,7 @@ function lockScreen() {
 }
 function startApp(acc) {
   window.ACC = acc;
-  const u = document.getElementById('bOut'); if (u) { u.querySelector('span').textContent = acc.user + ' · ' + acc.role; u.onclick = logout; }
+  const u = document.getElementById('bOut'); if (u) { u.querySelector('span').textContent = acc.user + ' · ' + (acc.role === 'AM' ? 'AM' : acc.label.replace('Rạp ', '')); u.onclick = logout; }
   init();
 }
 document.addEventListener('DOMContentLoaded', () => { const a = authGet(); if (authValid(a)) startApp(ACCOUNTS.find((x) => x.role === a.role && x.user === a.user)); else lockScreen(); });
