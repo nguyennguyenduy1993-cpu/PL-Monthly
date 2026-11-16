@@ -202,6 +202,7 @@ window.FIREBASE_CONFIG = {
 <script>// Vista "Marketing Report" (BO003) parser. Input: pages = [{items:[{str,x,w,y,h}]}] with y measured top-down.
 (function (root) {
   const NUM = /^-?[\d,]*\.?\d+$/;
+  const fin = (x) => typeof x === 'number' && isFinite(x);
   const num = (s) => (s == null ? null : Number(String(s).replace(/,/g, '')));
   function lines(page) {
     const its = page.items.filter((i) => i.str && i.str.trim() !== '').slice().sort((a, b) => a.y - b.y || a.x - b.x);
@@ -359,6 +360,11 @@ window.FIREBASE_CONFIG = {
     if (!k.adm) out.warnings.push('Không đọc được Admits');
     // số lệch: quy về số tổng của Marketing Report (Base Information)
     out.adjust = [];
+    // Transactions with Concessions phải khớp Admissions Strike Rate % và Average Value per Concession Trans. của chính báo cáo
+    if (k.adm && fin(k.adm_strike)) { const t = Math.round((k.adm * k.adm_strike) / 100);
+      if (!fin(k.trans_co) || Math.abs(k.trans_co - t) > Math.max(5, t * 0.01)) { out.adjust.push(`Transactions with Concessions ${fin(k.trans_co) ? k.trans_co : '–'} → ${t} (theo Admissions Strike Rate ${k.adm_strike}%)`); k.trans_co = t; } }
+    if (fin(k.trans_co) && k.trans_co && fin(k.avg_co_trans) && fin(k.co_net) && Math.abs(k.co_net / k.trans_co - k.avg_co_trans) > 1)
+      out.adjust.push(`Concession Sales Net / giao dịch = ${(k.co_net / k.trans_co).toFixed(1)} lệch Average Value per Concession Trans. ${k.avg_co_trans}`);
     if (out.channel.length === 2 && k.adm && out.channel[0].adm + out.channel[1].adm !== k.adm) { const pos = out.channel.find((c) => c.channel === 'POS'), on = out.channel.find((c) => c.channel === 'Online');
       if (pos && on) { out.adjust.push(`Admit quầy chỉnh ${pos.adm} → ${k.adm - on.adm} cho khớp Admits`); pos.adm = k.adm - on.adm; } }
     if (out.cls.length && k.co_net) { const d = k.co_net / 1000 - out.cls.reduce((a, c) => a + c.net, 0);
@@ -582,7 +588,11 @@ function monthRec(c, y, m) {
   if (!p && !v) return null;
   const r = { src: v ? 'pdf' : 'bp' };
   if (v) { const k = v.kpi || {}; r.adm = k.adm; r.nbo = fin(k.bo_sales) ? k.bo_sales / 1000 : null; r.nco = fin(k.co_net) ? k.co_net / 1000 : null;
-    r.trans_ticket = k.trans_ticket; r.trans_co = k.trans_co; r.co_net_k = k.co_net; r.sessions = (v.films || []).reduce((a, f) => a + (f.sessions || 0), 0) || null; }
+    r.trans_ticket = k.trans_ticket; r.trans_co = k.trans_co; r.co_net_k = k.co_net;
+    // Strike rate & Bill value lấy theo số Marketing Report in sẵn (Admissions Strike Rate %, Average Value per Concession Trans.)
+    if (fin(k.adm_strike) && k.adm) r.trans_co = Math.round((k.adm * k.adm_strike) / 100);
+    if (fin(k.avg_co_trans) && fin(r.trans_co)) r.co_net_k = k.avg_co_trans * r.trans_co;
+    if (fin(k.trans_strike) && fin(r.trans_co) && k.trans_strike > 0) r.trans_ticket = Math.round(r.trans_co / (k.trans_strike / 100)); r.sessions = (v.films || []).reduce((a, f) => a + (f.sessions || 0), 0) || null; }
   else { r.adm = p.adm; r.nbo = p.nbo; r.nco = p.nco; }
   unitFix(r, c, y, m);
   r.rev = fin(r.nbo) ? r.nbo + (fin(r.nco) ? r.nco : 0) : null;
@@ -1093,14 +1103,26 @@ async function fbConnect() {
     const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(cfg);
     try { await firebase.auth().signInAnonymously(); } catch (e) { console.warn('Anonymous auth chưa bật:', e.message); }
     const ref = firebase.database().ref(FB_ROOT); S.fb = ref;
-    ref.on('value', (snap) => { const v = snap.val() || {}; S.up = { vista: v.vista || {}, bp: v.bp || {}, market: v.market || {}, hc: v.hc || {}, plan: v.plan || {} }; saveCache(); fillYears(); render(); setDot('ok', 'Đã đồng bộ Firebase'); },
-      (err) => setDot('off', 'Firebase lỗi: ' + err.message));
-  } catch (e) { setDot('off', 'Firebase lỗi: ' + e.message); }
+    ref.on('value', (snap) => { const v = snap.val() || {}; S.fbErr = null;
+      S.up = { vista: v.vista || {}, bp: v.bp || {}, market: v.market || {}, hc: v.hc || {}, plan: v.plan || {} };
+      // dữ liệu tải lên mà chưa ghi được lên Firebase: giữ lại, không để bản trên Firebase xóa mất, rồi ghi lại
+      const pend = pendGet(); let n = 0; Object.entries(pend).forEach(([k, o]) => Object.entries(o).forEach(([key, val]) => { S.up[k][key] = val; n++; }));
+      saveCache(); fillYears(); render(); setDot(n ? 'off' : 'ok', n ? `Còn ${n} mục chưa lên Firebase` : 'Đã đồng bộ Firebase');
+      if (n && !S._retry) { S._retry = true; setTimeout(async () => { for (const [k, o] of Object.entries(pend)) await persist(k, o); S._retry = false; }, 500); } },
+      (err) => { S.fbErr = err.message; setDot('off', 'Firebase lỗi: ' + err.message); });
+  } catch (e) { S.fbErr = e.message; setDot('off', 'Firebase lỗi: ' + e.message); }
 }
+const PEND = 'plm_pending';
+const pendGet = () => { try { return JSON.parse(localStorage.getItem(PEND) || '{}'); } catch (e) { return {}; } };
+const pendSet = (o) => { try { localStorage.setItem(PEND, JSON.stringify(o)); } catch (e) {} };
 function setDot(cls, t) { const d = $('#fbDot'); if (d) { d.className = 'dot ' + cls; d.parentElement.title = t; } }
-async function persist(kind, obj) { // obj: {key: value}
+async function persist(kind, obj) { // obj: {key: value}; trả về true nếu đã lên Firebase
   Object.assign(S.up[kind], obj); saveCache();
-  if (S.fb) { const upd = {}; Object.entries(obj).forEach(([k, v]) => (upd[`${kind}/${k}`] = JSON.parse(JSON.stringify(v)))); await S.fb.update(upd); }
+  const pend = pendGet();
+  if (S.fb) { try { const upd = {}; Object.entries(obj).forEach(([k, v]) => (upd[`${kind}/${k}`] = JSON.parse(JSON.stringify(v)))); await S.fb.update(upd);
+      if (pend[kind]) { Object.keys(obj).forEach((k) => delete pend[kind][k]); if (!Object.keys(pend[kind]).length) delete pend[kind]; pendSet(pend); } return true; }
+    catch (e) { S.fbErr = e.message; } }
+  pend[kind] = Object.assign(pend[kind] || {}, obj); pendSet(pend); return false;
 }
 
 /* ---------- PDF upload ---------- */
@@ -1128,7 +1150,7 @@ async function uploadAny(files) {
       if (/\.pdf$/i.test(f.name)) {
         const v = parseVista(await pdfItems(f)); v.file = f.name; v.cinema = cinemaFromName(v.cinemaName); v.uploadedAt = new Date().toISOString();
         if (!v.cinema) v.warnings.push('Không nhận ra rạp: ' + (v.cinemaName || '?')); if (!v.films.length) v.warnings.push('Không đọc được bảng phim');
-        r.type = 'PDF Vista'; r.what = `${v.cinema || v.cinemaName || '?'} · ${v.month ? mlab(v.month) + '/' + v.year : '?'} · ${f0(v.kpi.adm)} admit · ${v.films.length} phim · ${v.tickets.length} ticket type · ${v.combos.length} combo`;
+        r.type = 'PDF Vista'; const kk = v.kpi; r.what = `${v.cinema || v.cinemaName || '?'} · ${v.month ? mlab(v.month) + '/' + v.year : '?'} · Admits ${f0(kk.adm)} · BO Sales ${f0(kk.bo_sales)} · CO Net ${f0(kk.co_net)} · Strike ${fR(kk.adm_strike)}% · Avg/CO trans ${fR(kk.avg_co_trans)} · ${v.films.length} phim · ${v.tickets.length} ticket type · ${v.combos.length} combo`;
         r.ok = !!(v.cinema && v.year && v.month && v.kpi.adm); r.check = v.warnings.join('; '); r.note = (v.adjust || []).join('; ');
         if (r.ok) { if (vGet(v.cinema, v.year, v.month)) r.note = ['Ghi đè bản cũ', r.note].filter(Boolean).join('; '); save.vista[K(v.cinema, v.year, v.month)] = v; }
       } else if (/\.xlsx?$/i.test(f.name)) {
@@ -1162,8 +1184,9 @@ async function uploadAny(files) {
   ['vista', 'bp', 'hc', 'plan'].forEach((k) => Object.keys(save[k]).forEach((key) => { if (!canSee(key.split('_')[0])) delete save[k][key]; })); // tài khoản rạp chỉ ghi số của rạp mình
   const b = $('#upSave', m); b.disabled = !res.some((r) => r.ok);
   b.onclick = async () => { b.disabled = true;
-    try { for (const k of ['vista', 'bp', 'market', 'hc', 'plan']) if (Object.keys(save[k]).length) await persist(k, save[k]);
-      m.remove(); toast('Đã lưu ' + res.filter((r) => r.ok).length + ' file'); fillYears();
+    try { let allFb = true; for (const k of ['vista', 'bp', 'market', 'hc', 'plan']) if (Object.keys(save[k]).length) allFb = (await persist(k, save[k])) && allFb;
+      m.remove(); fillYears();
+      toast(allFb ? 'Đã lưu ' + res.filter((r) => r.ok).length + ' file lên Firebase' : 'Đã lưu trên máy này, CHƯA lên Firebase' + (S.fbErr ? ': ' + S.fbErr : ' (chưa kết nối)') + '. App sẽ tự ghi lại khi kết nối được.', allFb ? 2500 : 8000);
       const v0 = Object.values(save.vista)[0]; if (v0 && canSee(v0.cinema)) { S.cin = v0.cinema; S.year = v0.year; S.months = [v0.month]; } render();
     } catch (e) { b.disabled = false; toast('Lỗi lưu: ' + e.message, 5000); } };
 }
@@ -1181,7 +1204,7 @@ function fillYears() { const el = $('#yearSel'); if (!el) return; el.innerHTML =
 function dataModal(y = S.year) {
   const st = `<div class="tw"><table><thead><tr><th>Rạp</th>${Array.from({ length: 12 }, (_, k) => `<th>${mlab(k + 1)}</th>`).join('')}</tr></thead><tbody>${CINV().map((c) => `<tr><td>${c.code}</td>${Array.from({ length: 12 }, (_, k) => { const p = plGet(c.code, y, k + 1), pl = planGet(c.code, y, k + 1), v = vGet(c.code, y, k + 1), h = hcGet(c.code, y, k + 1); const mk = c.cluster && mkAll().some((r) => r.cluster === c.cluster && r.year === y && r.month === k + 1);
     return `<td title="BP2026 Cinema ${pl ? '✓' : '✗'} · Ops Business Plan ${p ? '✓' : '✗'} · Lương & headcount ${h ? '✓' : '✗'} · PDF Vista ${v ? '✓' : '✗'} · Thị phần ${mk ? '✓' : '✗'}"><span class="${pl ? 'ok' : 'no'}">K</span><span class="${p ? 'ok' : 'no'}">B</span><span class="${h ? 'ok' : 'no'}">H</span><span class="${v ? 'ok' : 'no'}">P</span><span class="${mk ? 'ok' : 'no'}">M</span></td>`; }).join('')}</tr>`).join('')}</tbody></table></div>
-  <div class="lg"><span><b class="ok">K</b> BP2026 (kế hoạch)</span><span><b class="ok">B</b> Ops Business Plan</span><span><b class="ok">H</b> Lương & headcount</span><span><b class="ok">P</b> PDF Vista</span><span><b class="ok">M</b> Thị phần</span><span>${S.fb ? 'Đã đồng bộ Firebase' : 'Chưa kết nối Firebase'}</span></div>`;
+  <div class="lg"><span><b class="ok">K</b> BP2026 (kế hoạch)</span><span><b class="ok">B</b> Ops Business Plan</span><span><b class="ok">H</b> Lương & headcount</span><span><b class="ok">P</b> PDF Vista</span><span><b class="ok">M</b> Thị phần</span><span>${(() => { const n = Object.values(pendGet()).reduce((a, o) => a + Object.keys(o).length, 0); return S.fbErr ? '<b class="bad">Firebase lỗi: ' + esc(S.fbErr) + '</b>' : !S.fb ? 'Chưa kết nối Firebase' : n ? `<b class="bad">Còn ${n} mục chưa lên Firebase</b>` : 'Đã đồng bộ Firebase'; })()}</span></div>`;
   const m = modal(`<div class="mhead"><h3>Trạng thái dữ liệu</h3><label class="ysel2">Năm <select id="dsYear">${allYears().map((x) => `<option value="${x}"${x === y ? ' selected' : ''}>${x}</option>`).join('')}</select></label></div>${st}<div class="mfoot"><button class="btn" data-close>Đóng</button></div>`);
   const ds = document.getElementById('dsYear'); if (ds) ds.onchange = () => { (m && m.remove ? m : document.querySelector('.modal')).remove(); dataModal(+ds.value); };
 }
