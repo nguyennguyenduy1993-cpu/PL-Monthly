@@ -557,7 +557,7 @@ const fR = (v) => (fin(v) ? v.toLocaleString('en-US', { minimumFractionDigits: 1
 const f2 = (v) => fR(v); // 1 số lẻ cho mọi chỉ số tỷ lệ
 const pc = (v, d = 1) => (fin(v) ? (v * 100).toFixed(d) + '%' : '–');
 const dp = (v) => (fin(v) ? (v * 100).toFixed(1) + '%' : '–');
-const dpt = (v) => (fin(v) ? (v * 100).toFixed(1) + ' đ' : '–');
+const dpt = (v) => (fin(v) ? (v * 100).toFixed(1) + '%' : '–');
 const ch = (a, b) => (fin(a) && fin(b) && b !== 0 ? (Math.abs(a) - Math.abs(b)) / Math.abs(b) : null);
 const mlab = (m) => 'T' + String(m).padStart(2, '0');
 const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase();
@@ -583,16 +583,23 @@ function unitFix(r, c, y, m) {
   fix('nbo', 15, 1500); fix('nco', 3, 600);
   if (log.length) UNIT_LOG[K(c, y, m)] = log;
 }
+const adm2 = (k) => (k.adm || 0) * 1.0001 + 1;
 function monthRec(c, y, m) {
   const p = plGet(c, y, m), v = vGet(c, y, m);
   if (!p && !v) return null;
   const r = { src: v ? 'pdf' : 'bp' };
   if (v) { const k = v.kpi || {}; r.adm = k.adm; r.nbo = fin(k.bo_sales) ? k.bo_sales / 1000 : null; r.nco = fin(k.co_net) ? k.co_net / 1000 : null;
     r.trans_ticket = k.trans_ticket; r.trans_co = k.trans_co; r.co_net_k = k.co_net;
-    // Strike rate & Bill value lấy theo số Marketing Report in sẵn (Admissions Strike Rate %, Average Value per Concession Trans.)
-    if (fin(k.adm_strike) && k.adm) r.trans_co = Math.round((k.adm * k.adm_strike) / 100);
-    if (fin(k.avg_co_trans) && fin(r.trans_co)) r.co_net_k = k.avg_co_trans * r.trans_co;
-    if (fin(k.trans_strike) && fin(r.trans_co) && k.trans_strike > 0) r.trans_ticket = Math.round(r.trans_co / (k.trans_strike / 100)); r.sessions = (v.films || []).reduce((a, f) => a + (f.sessions || 0), 0) || null; }
+    // Strike rate & Bill value theo Marketing Report: chọn số giao dịch F&B khớp với Admits, Concession Sales Net,
+    // Admissions Strike Rate % và Average Value per Concession Trans. (loại số bị lệch đơn vị khi đọc PDF)
+    { const adm = k.adm, coK = fin(k.co_net) && fin(r.nco) ? r.nco * 1000 : k.co_net; // nghìn VND
+      const ok = (t) => fin(t) && t > 0 && adm && t / adm >= 0.05 && t / adm <= 0.95 && (!coK || (coK / t >= 20 && coK / t <= 400));
+      const base = [k.trans_co, fin(k.adm_strike) && adm ? (adm * k.adm_strike) / 100 : null, fin(k.avg_co_trans) && k.avg_co_trans && coK ? coK / k.avg_co_trans : null];
+      let t = base.find(ok);
+      if (t == null) for (const j of [1, -1, 2, -2, 3, -3]) { t = base.map((x) => (fin(x) ? x * 10 ** j : null)).find(ok); if (t != null) break; }
+      r.trans_co = t != null ? Math.round(t) : null; r.co_net_k = r.trans_co ? coK : null; }
+    { let ts = k.trans_strike; if (fin(ts) && ts > 0) { while (ts < 20) ts *= 10; while (ts > 100) ts /= 10; } const tt = fin(ts) && r.trans_co ? Math.round(r.trans_co / (ts / 100)) : null;
+      r.trans_ticket = fin(k.trans_ticket) && r.trans_co && k.trans_ticket >= r.trans_co && k.trans_ticket <= adm2(k) ? k.trans_ticket : tt; } r.sessions = (v.films || []).reduce((a, f) => a + (f.sessions || 0), 0) || null; }
   else { r.adm = p.adm; r.nbo = p.nbo; r.nco = p.nco; }
   unitFix(r, c, y, m);
   r.rev = fin(r.nbo) ? r.nbo + (fin(r.nco) ? r.nco : 0) : null;
@@ -972,8 +979,6 @@ function ticket(V, P) {
     parts.push(`<div class="ct sub">Thời điểm mua vé so với giờ chiếu</div>` + shareTable('Thời điểm', Object.entries(cur).sort((a, b) => a[1].order - b[1].order).map(([k, x]) => ({ label: k, v: x.adm })), ly ? Object.fromEntries(Object.entries(ly).map(([k, x]) => [k, x.adm])) : null));
     const GL = [['1 người', 'single'], ['2 người', 'two'], ['3 người', 'three'], ['4 người', 'four'], ['>4 người', 'more']];
     parts.push(`<div class="ct sub">Quy mô nhóm khách (giao dịch)</div>` + shareTable('Nhóm', GL.map(([l, k]) => ({ label: l, v: V.group[k] })), L ? Object.fromEntries(GL.map(([l, k]) => [l, L.group[k]])) : null));
-    const PB = Object.entries(V.payBO).sort((a, b) => b[1] - a[1]).slice(0, 8);
-    parts.push(`<div class="ct sub">Thanh toán vé (triệu)</div>` + shareTable('Phương thức', PB.map(([l, v]) => ({ label: l, v })), L ? L.payBO : null, f1));
   }
   if (!parts.length) return empty(`Chưa có số ticket type cho ${plabel(P.y, P.M)}.`, ['up', 'Tải dữ liệu']);
   return parts.join('');
