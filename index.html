@@ -357,8 +357,12 @@ window.FIREBASE_CONFIG = {
     const k = out.kpi;
     if (!out.year || !out.month) out.warnings.push('Không đọc được kỳ báo cáo');
     if (!k.adm) out.warnings.push('Không đọc được Admits');
-    if (out.channel.length && k.adm && out.channel[0].adm + out.channel[1].adm !== k.adm) out.warnings.push('Tổng admit theo kênh lệch Admits');
-    if (out.cls.length && k.co_net && Math.abs(out.cls.reduce((a, c) => a + c.net, 0) * 1000 - k.co_net) > 2) out.warnings.push('Tổng F&B theo class lệch Concession Sales Net');
+    // số lệch: quy về số tổng của Marketing Report (Base Information)
+    out.adjust = [];
+    if (out.channel.length === 2 && k.adm && out.channel[0].adm + out.channel[1].adm !== k.adm) { const pos = out.channel.find((c) => c.channel === 'POS'), on = out.channel.find((c) => c.channel === 'Online');
+      if (pos && on) { out.adjust.push(`Admit quầy chỉnh ${pos.adm} → ${k.adm - on.adm} cho khớp Admits`); pos.adm = k.adm - on.adm; } }
+    if (out.cls.length && k.co_net) { const d = k.co_net / 1000 - out.cls.reduce((a, c) => a + c.net, 0);
+      if (Math.abs(d * 1000) > 2) { out.cls.push({ item_class: 'Khác (chênh lệch)', net: d, pct: d / (k.co_net / 1000), per_admit: k.adm ? (d * 1e6) / k.adm / 1000 : null }); out.adjust.push(`F&B theo class lệch ${(d * 1000).toLocaleString('en-US', { maximumFractionDigits: 0 })} nghìn đ, đưa vào dòng "Khác (chênh lệch)" để khớp Concession Sales Net`); } }
     return out;
   }
   root.parseVista = parseVista; root._vistaLines = lines;
@@ -541,11 +545,13 @@ const K = (c, y, m) => `${c}_${y}_${m}`;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 const fin = (v) => typeof v === 'number' && isFinite(v);
 const f0 = (v) => (fin(v) ? Math.round(v).toLocaleString('en-US') : '–');
-const f1 = (v) => (fin(v) ? v.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '–');
-const f2 = (v) => (fin(v) ? v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '–');
+// số tiền/chi phí/số lượng: không lẻ; chỉ số tỷ lệ (ATP, SPP, Bill, /khách, /giờ, /suất): 1 số lẻ
+const f1 = (v) => (fin(v) ? Math.round(v).toLocaleString('en-US') : '–');
+const fR = (v) => (fin(v) ? v.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '–');
+const f2 = (v) => fR(v); // 1 số lẻ cho mọi chỉ số tỷ lệ
 const pc = (v, d = 1) => (fin(v) ? (v * 100).toFixed(d) + '%' : '–');
-const dp = (v) => (fin(v) ? (v > 0 ? '+' : '') + (v * 100).toFixed(1) + '%' : '–');
-const dpt = (v) => (fin(v) ? (v > 0 ? '+' : '') + (v * 100).toFixed(1) + ' đ' : '–');
+const dp = (v) => (fin(v) ? (v * 100).toFixed(1) + '%' : '–');
+const dpt = (v) => (fin(v) ? (v * 100).toFixed(1) + ' đ' : '–');
 const ch = (a, b) => (fin(a) && fin(b) && b !== 0 ? (Math.abs(a) - Math.abs(b)) / Math.abs(b) : null);
 const mlab = (m) => 'T' + String(m).padStart(2, '0');
 const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase();
@@ -560,6 +566,17 @@ const ZM = new Set(['payroll', 'electricity', 'elec_index', 'op_hour', 'care']);
 const COSTF = ['payroll', 'payroll_mgm', 'payroll_staff', 'payroll_ot', 'ot_mgm', 'ot_staff', 'hc_mgm', 'hc_staff', 'hours_staff', 'payroll_gs', 'payroll_barista', 'night_shift', 'stationery_total', 'stationery', 'ticket_print', 'utilities', 'electricity', 'elec_index', 'op_hour', 'cleaning', 'care', 'hygienic', 'rentokil', 'chair_clean', 'drinking', 'others', 'kwh_low', 'kwh_mid', 'kwh_peak'];
 const VF = ['trans_ticket', 'trans_co', 'co_net_k', 'sessions'];
 const NONMONEY = new Set(['elec_index', 'op_hour', 'kwh_low', 'kwh_mid', 'kwh_peak', 'hc_mgm', 'hc_staff', 'hours_staff']); // cost lines are stored negative, as in the Performance Report
+// chuẩn đơn vị: Admission (khách), NBO/NCO (triệu VND). File nguồn ghi theo nghìn khách / tỷ / đồng sẽ được quy đổi.
+const UNIT_LOG = {};
+function unitFix(r, c, y, m) {
+  const log = [];
+  if (fin(r.adm) && r.adm > 0 && r.adm < 1000) { r.adm *= 1000; log.push('Admission ×1000'); }
+  const fix = (k, lo, hi) => { if (!fin(r[k]) || !r[k] || !r.adm) return; let per = (Math.abs(r[k]) * 1000) / r.adm, f = 1;
+    while (per < lo && f < 1e9) { per *= 1000; f *= 1000; } while (per > hi && f > 1e-9) { per /= 1000; f /= 1000; }
+    if (f !== 1) { r[k] *= f; log.push(`${k.toUpperCase()} ×${f}`); } };
+  fix('nbo', 15, 1500); fix('nco', 3, 600);
+  if (log.length) UNIT_LOG[K(c, y, m)] = log;
+}
 function monthRec(c, y, m) {
   const p = plGet(c, y, m), v = vGet(c, y, m);
   if (!p && !v) return null;
@@ -567,6 +584,7 @@ function monthRec(c, y, m) {
   if (v) { const k = v.kpi || {}; r.adm = k.adm; r.nbo = fin(k.bo_sales) ? k.bo_sales / 1000 : null; r.nco = fin(k.co_net) ? k.co_net / 1000 : null;
     r.trans_ticket = k.trans_ticket; r.trans_co = k.trans_co; r.co_net_k = k.co_net; r.sessions = (v.films || []).reduce((a, f) => a + (f.sessions || 0), 0) || null; }
   else { r.adm = p.adm; r.nbo = p.nbo; r.nco = p.nco; }
+  unitFix(r, c, y, m);
   r.rev = fin(r.nbo) ? r.nbo + (fin(r.nco) ? r.nco : 0) : null;
   COSTF.forEach((f) => { let x = p ? p[f] : null; if (!fin(x) || (ZM.has(f) && x === 0)) x = null; if (x != null && !NONMONEY.has(f)) x = -Math.abs(x); r[f] = x; });
   // payroll: headcount report first (MGM + staff, lương hành chính + phụ trội); Business Plan only has staff payroll
@@ -655,7 +673,7 @@ const LINES = [
   ['cleaning', 'Cleaning (dịch vụ & DCVS)', 'cost', 2], ['drinking', 'Drinking', 'cost', 2], ['others', 'Others', 'cost', 2], ['cost_rev', '% Controllable Cost / Revenue', 'pctc', 0, 1],
 ];
 const COSTK = new Set(['cost', 'costr', 'pctc']);
-function fmtK(kind, v) { if (!fin(v)) return '–'; if (kind === 'num') return f0(v); if (kind === 'pct' || kind === 'pctc') return pc(v); if (kind === 'costr') return f2(v); return f1(v); }
+function fmtK(kind, v) { if (!fin(v)) return '–'; if ((kind === 'cost' || kind === 'costr') && v < 0) return '(' + fmtK(kind, -v) + ')'; if (kind === 'num') return f0(v); if (kind === 'pct' || kind === 'pctc') return pc(v); if (kind === 'costr') return f2(v); if (kind === 'ratio') return fR(v); return f0(v); }
 function delta(kind, a, b) { if (kind === 'pct' || kind === 'pctc') return fin(a) && fin(b) ? a - b : null; return ch(a, b); }
 function dfmt(kind, v) { return kind === 'pct' || kind === 'pctc' ? dpt(v) : dp(v); }
 function tone(kind, v) { if (!fin(v) || Math.abs(v) < 0.0005) return 'flat'; return COSTK.has(kind) ? (v > 0 ? 'bad' : 'good') : v > 0 ? 'good' : 'bad'; }
@@ -686,14 +704,14 @@ function sectionNotes(c, P, V) {
     if (comp && comp.pts_ly > 0.01) add('market', 'warn', `${comp.exhibitor} tăng ${dpt(comp.pts_ly)} thị phần so với cùng kỳ, mạnh nhất trong các đối thủ.`, 'Theo dõi chương trình giá/khuyến mãi của rạp này.'); }
   // Top film
   if (V && V.films.length) { const TA = V.films.reduce((s, f) => s + f.adm, 0), TS = V.films.reduce((s, f) => s + f.sessions, 0);
-    const t3 = V.films.slice(0, 3).reduce((s, f) => s + f.adm, 0) / TA; add('film', t3 > 0.6 ? 'warn' : 'flat', `Top 3 phim chiếm ${pc(t3)} admit, ${f1(TA / TS)} admit/suất bình quân.`);
+    const t3 = V.films.slice(0, 3).reduce((s, f) => s + f.adm, 0) / TA; add('film', t3 > 0.6 ? 'warn' : 'flat', `Top 3 phim chiếm ${pc(t3)} admit, ${fR(TA / TS)} admit/suất bình quân.`);
     const over = V.films.slice(0, 15).filter((f) => f.sessions / TS - f.adm / TA > 0.03).slice(0, 2), under = V.films.slice(0, 15).filter((f) => f.adm / TA - f.sessions / TS > 0.03).slice(0, 2);
-    over.forEach((f) => add('film', 'bad', `${f.film}: ${pc(f.sessions / TS)} suất nhưng chỉ ${pc(f.adm / TA)} admit (${f1(f.adm / f.sessions)} admit/suất).`, 'Cân nhắc giảm suất, dời sang phim có lấp đầy cao hơn.'));
-    under.forEach((f) => add('film', 'good', `${f.film}: ${pc(f.adm / TA)} admit trên ${pc(f.sessions / TS)} suất (${f1(f.adm / f.sessions)} admit/suất).`, 'Cân nhắc tăng suất giờ cao điểm.'));
+    over.forEach((f) => add('film', 'bad', `${f.film}: ${pc(f.sessions / TS)} suất nhưng chỉ ${pc(f.adm / TA)} admit (${fR(f.adm / f.sessions)} admit/suất).`, 'Cân nhắc giảm suất, dời sang phim có lấp đầy cao hơn.'));
+    under.forEach((f) => add('film', 'good', `${f.film}: ${pc(f.adm / TA)} admit trên ${pc(f.sessions / TS)} suất (${fR(f.adm / f.sessions)} admit/suất).`, 'Cân nhắc tăng suất giờ cao điểm.'));
     const la = ly && ly.adm; if (fin(la)) add('film', TA >= la ? 'good' : 'bad', `Tổng admit ${dp(ch(TA, la))} so với cùng kỳ.`); }
   // Ticket type
   if (V && V.tickets.length) { const pr = V.tickets.filter((t) => PROMO.test(t.ticket_type)); const pa = pr.reduce((s, t) => s + t.adm, 0), pn = pr.reduce((s, t) => s + t.net, 0);
-    if (pa) add('ticket', pa / V.adm > 0.45 ? 'warn' : 'flat', `Vé khuyến mãi/đối tác chiếm ${pc(pa / V.adm)} admit, ATP ${f1((pn * 1000) / pa)} so với ATP chung ${f1((V.nbo * 1000) / V.adm)}.`, pa / V.adm > 0.45 ? 'Rà ngân sách chương trình đối tác (MoMo, Zalo, U22) so với mức tăng admit mang lại.' : '');
+    if (pa) add('ticket', pa / V.adm > 0.45 ? 'warn' : 'flat', `Vé khuyến mãi/đối tác chiếm ${pc(pa / V.adm)} admit, ATP ${fR((pn * 1000) / pa)} so với ATP chung ${fR((V.nbo * 1000) / V.adm)}.`, pa / V.adm > 0.45 ? 'Rà ngân sách chương trình đối tác (MoMo, Zalo, U22) so với mức tăng admit mang lại.' : '');
     const on = V.channel.find((x) => x.channel === 'Online'), TA = V.channel.reduce((s, x) => s + x.adm, 0);
     if (on && TA) { const oL = VL && VL.channel.find((x) => x.channel === 'Online'), TL = VL ? VL.channel.reduce((s, x) => s + x.adm, 0) : 0;
       add('ticket', 'flat', `Online chiếm ${pc(on.adm / TA)} admit${oL && TL ? ` (${dpt(on.adm / TA - oL.adm / TL)} so với cùng kỳ)` : ''}.`); }
@@ -710,7 +728,7 @@ function sectionNotes(c, P, V) {
     const low = V.items.filter((x) => x.mOk && x.net && x.margin / x.net < 0.75); if (low.length) add('coitems', 'warn', `${low.length} món trong top doanh thu có margin dưới 75%: ${low.map((x) => `${x.item} ${pc(x.margin / x.net)}`).join(', ')}.`, 'Kiểm tra định lượng, giá vốn và giá bán các món này.');
     const on = V.combos.slice(0, 10).filter((x) => /online/i.test(x.item)).reduce((s, x) => s + x.net, 0); if (on) add('coitems', 'flat', `Combo online chiếm ${pc(on / s10)} doanh thu top 10 combo.`); }
   // OPEX
-  if (fin(cur.elec_ph) && st.std_elec_idx_per_hour) { const g = cur.elec_ph / st.std_elec_idx_per_hour - 1; add('opex', g > 0.05 ? 'bad' : 'good', `Điện ${f1(cur.elec_ph)} kWh/giờ, ${dp(g)} so với standard.`, g > 0.05 ? 'Đối chiếu lịch bật/tắt điện sảnh, phòng chiếu, HVAC với lịch chiếu.' : ''); }
+  if (fin(cur.elec_ph) && st.std_elec_idx_per_hour) { const g = cur.elec_ph / st.std_elec_idx_per_hour - 1; add('opex', g > 0.05 ? 'bad' : 'good', `Điện ${fR(cur.elec_ph)} kWh/giờ, ${dp(g)} so với standard.`, g > 0.05 ? 'Đối chiếu lịch bật/tắt điện sảnh, phòng chiếu, HVAC với lịch chiếu.' : ''); }
   if (fin(cur.care) && st.std_care) { const g = Math.abs(cur.care) / (Math.abs(st.std_care) * n) - 1; if (g > 0.05) add('opex', 'bad', `Care ${f1(Math.abs(cur.care))} triệu, cao hơn standard ${dp(g)}.`, 'Đối chiếu giờ Care thực tế với giờ tăng cường bắt buộc theo programming.'); }
   if (fin(cur.payroll_staff) && cur.cnt.payroll_staff === n) { if (bp && fin(bp.payroll_staff)) { const g = ch(cur.payroll_staff, bp.payroll_staff); add('opex', g > 0.03 ? 'bad' : 'good', `Payroll staff ${f1(Math.abs(cur.payroll_staff))} triệu, ${dp(g)} so với BP.`, g > 0.03 ? 'Rà roster theo peak hour, giảm ca ở khung thấp điểm.' : ''); }
     if (ly && !ly.payroll_gap && fin(cur.scph) && fin(ly.scph)) { const g = ch(cur.scph, ly.scph); if (Math.abs(g) > 0.05) add('opex', g > 0 ? 'bad' : 'good', `Staff cost/admit ${f2(Math.abs(cur.scph))} nghìn đ (${dp(g)} so với cùng kỳ).`); } }
@@ -873,8 +891,8 @@ function drawYear(P) {
   const vals = [...a, ...l, ...b].filter(fin); if (!vals.length) { el.innerHTML = ''; return; }
   const pctK = kind === 'pct' || kind === 'pctc'; let lo = Math.min(0, ...vals), hi = Math.max(...vals); if (hi === lo) hi = lo + 1; hi *= 1.08;
   const cw = (W - m.l - m.r) / 12, x = (i) => m.l + i * cw, y = (v) => m.t + (1 - (v - lo) / (hi - lo)) * (H - m.t - m.b);
-  const fvl = (v) => (pctK ? pc(v) : kind === 'num' ? (Math.abs(v) >= 10000 ? f1(v / 1000) + 'k' : f0(v)) : kind === 'costr' ? f2(v) : f1(v));
-  const fv = (v) => (pctK ? pc(v, 0) : kind === 'num' ? f0(v) : kind === 'costr' ? f2(v) : f1(v));
+  const fvl = (v) => (pctK ? pc(v) : kind === 'num' ? (Math.abs(v) >= 10000 ? f1(v / 1000) + 'k' : f0(v)) : kind === 'costr' ? f2(v) : kind === 'ratio' ? fR(v) : f0(v));
+  const fv = (v) => (pctK ? pc(v, 0) : kind === 'costr' ? f2(v) : kind === 'ratio' ? fR(v) : f0(v));
   let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(lab)} theo tháng, ${P.y} so với ${P.y - 1}">`;
   for (let g = 0; g <= 4; g++) { const v = lo + ((hi - lo) * g) / 4; svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="#ECECE8"/><text class="ax" x="${m.l - 6}" y="${y(v) + 3}" text-anchor="end">${fv(v)}</text>`; }
   P.M.forEach((mm) => (svg += `<rect x="${x(mm - 1)}" y="${m.t}" width="${cw}" height="${H - m.t - m.b}" fill="#EEF3FC"/>`));
@@ -920,7 +938,7 @@ function film(V, P) {
     ['Top 3 phim / tổng admit', V.films.slice(0, 3).reduce((a, f) => a + f.adm, 0) / TA, L ? L.films.slice(0, 3).reduce((a, f) => a + f.adm, 0) / LA : null, pc]];
   const t0 = `<div class="card tw"><table><thead><tr><th class="t">Tổng quan phim</th><th>Kỳ này</th><th>LY</th><th>vs LY</th></tr></thead><tbody>${sm.map(([l, a, b, f]) => `<tr><td class="t" style="white-space:pre">${l}</td><td>${f(a)}</td><td>${f(b)}</td><td class="${tone('num', f === pc ? null : ch(a, b))}">${f === pc ? (fin(b) ? dpt(a - b) : '–') : dp(ch(a, b))}</td></tr>`).join('')}</tbody></table></div>`;
   const lm = L ? Object.fromEntries(L.films.map((f) => [f.film, f])) : {};
-  const rows = V.films.slice(0, 15).map((f, i) => `<tr><td>${i + 1}</td><td class="t">${esc(f.film)}</td><td>${f0(f.sessions)}</td><td>${pc(f.sessions / TS)}</td><td>${f0(f.adm)}</td><td>${pc(f.adm / TA)}</td><td>${f1(f.adm / f.sessions)}</td><td>${f1(f.nbo)}</td><td>${one ? pc(f.occ[0]) : '–'}</td><td>${f1((f.nbo * 1000) / f.adm)}</td><td class="${isNewFilm(f, P.y, P.M) ? 'good' : 'flat'}">${esc(f.opening || '–')}${isNewFilm(f, P.y, P.M) === true ? ' · mới' : isNewFilm(f, P.y, P.M) === false ? ' · chuyển tiếp' : ''}</td><td>${lm[f.film] ? f0(lm[f.film].adm) : '–'}</td></tr>`).join('');
+  const rows = V.films.slice(0, 15).map((f, i) => `<tr><td>${i + 1}</td><td class="t">${esc(f.film)}</td><td>${f0(f.sessions)}</td><td>${pc(f.sessions / TS)}</td><td>${f0(f.adm)}</td><td>${pc(f.adm / TA)}</td><td>${fR(f.adm / f.sessions)}</td><td>${f1(f.nbo)}</td><td>${one ? pc(f.occ[0]) : '–'}</td><td>${fR((f.nbo * 1000) / f.adm)}</td><td class="${isNewFilm(f, P.y, P.M) ? 'good' : 'flat'}">${esc(f.opening || '–')}${isNewFilm(f, P.y, P.M) === true ? ' · mới' : isNewFilm(f, P.y, P.M) === false ? ' · chuyển tiếp' : ''}</td><td>${lm[f.film] ? f0(lm[f.film].adm) : '–'}</td></tr>`).join('');
   const t1 = `<div class="card tw" style="margin-top:12px"><div class="ct">Top 15 phim</div><table><thead><tr><th>#</th><th class="t">Phim</th><th>Suất</th><th>% Suất</th><th>Admit</th><th>% Admit</th><th>Admit/suất</th><th>NBO</th><th>Lấp đầy</th><th>ATP</th><th>Khởi chiếu</th><th>Admit LY</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   return t0 + t1;
 }
@@ -932,7 +950,7 @@ function ticket(V, P) {
   const lyT = L ? Object.fromEntries(L.tickets.map((t) => [t.ticket_type, { adm: t.adm, net: t.net }])) : Object.fromEntries(ref.map((r) => [r.ticket_type, { adm: r.adm_ly, net: r.nbo_ly }]));
   const hd = `<thead><tr><th class="t">Ticket type</th><th>Admit</th><th>% Admit</th><th>NBO</th><th>ATP</th><th>Admit LY</th><th>vs LY</th><th>ATP LY</th><th>vs ATP LY</th></tr></thead>`;
   const ln = (name, adm, net, TA, l) => { const atp = adm ? (net * 1000) / adm : null, al = l && l.adm ? (l.net * 1000) / l.adm : null;
-    return `<td class="t">${esc(name)}</td><td>${f0(adm)}</td><td>${pc(adm / TA)}</td><td>${f1(net)}</td><td>${f1(atp)}</td><td>${l ? f0(l.adm) : '–'}</td><td class="${tone('num', l ? ch(adm, l.adm) : null)}">${l ? dp(ch(adm, l.adm)) : '–'}</td><td>${f1(al)}</td><td class="${tone('num', ch(atp, al))}">${dp(ch(atp, al))}</td>`; };
+    return `<td class="t">${esc(name)}</td><td>${f0(adm)}</td><td>${pc(adm / TA)}</td><td>${f1(net)}</td><td>${fR(atp)}</td><td>${l ? f0(l.adm) : '–'}</td><td class="${tone('num', l ? ch(adm, l.adm) : null)}">${l ? dp(ch(adm, l.adm)) : '–'}</td><td>${fR(al)}</td><td class="${tone('num', ch(atp, al))}">${dp(ch(atp, al))}</td>`; };
   if (V && V.tickets.length) parts.push(`<div class="card tw"><div class="ct">Top ticket type</div><table>${hd}<tbody>${V.tickets.slice(0, 15).map((t) => `<tr>${ln(t.ticket_type, t.adm, t.net, V.adm, lyT[t.ticket_type])}</tr>`).join('')}</tbody></table></div>`);
   else if (ref.length) { const tot = ref.find((r) => r.ticket_type === 'Grand Total');
     parts.push(`<div class="card tw"><div class="ct">Top 10 ticket type</div><table>${hd}<tbody>${ref.filter((r) => r.ticket_type !== 'Grand Total').map((r) => `<tr>${ln(r.ticket_type, r.adm_tm, r.nbo_tm, tot.adm_tm, lyT[r.ticket_type])}</tr>`).join('')}<tr class="tot">${ln('Tổng', tot.adm_tm, tot.nbo_tm, tot.adm_tm, lyT['Grand Total'])}</tr></tbody></table></div>`); }
@@ -1003,13 +1021,13 @@ function opex(P) {
     ['Headcount staff', n === 1 ? v(cur, 'hc_staff') : null, null, P.prevPairs.length === 1 ? v(prev, 'hc_staff') : null, n === 1 ? v(ly, 'hc_staff') : null, 'f0', '', 1],
     ['Giờ công staff', v(cur, 'hours_staff'), null, v(prev, 'hours_staff'), v(ly, 'hours_staff'), 'f0', '', 1],
     ['Staff cost / admit (nghìn đ)', cur.scph != null ? Math.abs(cur.scph) : null, null, prev && prev.scph != null ? Math.abs(prev.scph) : null, ly && !ly.payroll_gap && ly.scph != null ? Math.abs(ly.scph) : null, 'f2', '', 1],
-    ['Staff cost / giờ công (nghìn đ)', cur.scph_hour != null ? Math.abs(cur.scph_hour) : null, null, prev && prev.scph_hour != null ? Math.abs(prev.scph_hour) : null, ly && ly.scph_hour != null ? Math.abs(ly.scph_hour) : null, 'f1', '', 1],
+    ['Staff cost / giờ công (nghìn đ)', cur.scph_hour != null ? Math.abs(cur.scph_hour) : null, null, prev && prev.scph_hour != null ? Math.abs(prev.scph_hour) : null, ly && ly.scph_hour != null ? Math.abs(ly.scph_hour) : null, 'fR', '', 1],
     ['b. Stationary', ab(cur, 'stationery_total'), null, ab(prev, 'stationery_total'), ab(ly, 'stationery_total'), 'f1', ''],
     ['Stationary / admit (nghìn đ)', pa(cur, 'stationery_total'), st.std_stationery_per_adm, pa(prev, 'stationery_total'), pa(ly, 'stationery_total'), 'f2', '', 1],
     ['c. Utilities', ab(cur, 'utilities'), null, ab(prev, 'utilities'), ab(ly, 'utilities'), 'f1', ''],
     ['Electricity and power', ab(cur, 'electricity'), null, ab(prev, 'electricity'), ab(ly, 'electricity'), 'f1', '', 1],
     ['Electricity index (kWh)', v(cur, 'elec_index'), null, v(prev, 'elec_index'), v(ly, 'elec_index'), 'f0', '', 2],
-    ['kWh / Operation Hour', v(cur, 'elec_ph'), st.std_elec_idx_per_hour, v(prev, 'elec_ph'), v(ly, 'elec_ph'), 'f1', '', 2],
+    ['kWh / Operation Hour', v(cur, 'elec_ph'), st.std_elec_idx_per_hour, v(prev, 'elec_ph'), v(ly, 'elec_ph'), 'fR', '', 2],
     ['Cleaning (dịch vụ & DCVS)', ab(cur, 'cleaning'), null, ab(prev, 'cleaning'), ab(ly, 'cleaning'), 'f1', star(cur, 'cleaning'), 1],
     ['Care', ab(cur, 'care'), st.std_care ? Math.abs(st.std_care) * n : null, ab(prev, 'care'), ab(ly, 'care'), 'f1', '', 2],
     ['Hygienic / admit (nghìn đ)', pa(cur, 'hygienic'), st.std_hygienic_per_adm, pa(prev, 'hygienic'), pa(ly, 'hygienic'), 'f2', '', 2],
@@ -1018,7 +1036,7 @@ function opex(P) {
     ['Drinking', ab(cur, 'drinking'), null, ab(prev, 'drinking'), ab(ly, 'drinking'), 'f1', '', 1],
     ['Others', ab(cur, 'others'), null, ab(prev, 'others'), ab(ly, 'others'), 'f1', '', 1],
   ];
-  const F = { f0, f1, f2 };
+  const F = { f0, f1, f2, fR };
   const rows = G.map(([lab, a, s, p, l, f, stx, lv]) => { const g = fin(a) && fin(s) && s ? a / s - 1 : null; const cls = !fin(g) ? '' : g > 0.05 ? 'bad' : g < -0.05 ? 'good' : 'flat';
     const bk = BK[lab], bv = bp && bk && fin(bp[bk]) ? Math.abs(bp[bk]) : null; const gb = (lab === 'a. Payroll' && cur.payroll_gap) ? null : ch(a, bv);
     const hd = !lv; return `<tr class="${hd ? 'grp b' : 'l' + lv}"><td>${lab}${stx}</td><td>${F[f](a)}</td><td>${F[f](bv)}</td><td class="${tone('cost', gb)}">${dp(gb)}</td><td>${F[f](s)}</td><td class="${cls}">${dp(g)}</td><td>${F[f](p)}</td><td class="${tone('cost', ch(a, p))}">${dp(ch(a, p))}</td><td>${F[f](l)}</td><td class="${tone('cost', ch(a, l))}">${dp(ch(a, l))}</td></tr>`; }).join('');
@@ -1038,7 +1056,7 @@ function opex(P) {
   const ML = [['a. Payroll', 'payroll', 1], ['Payroll for Manager', 'payroll_mgm'], ['Lương phụ trội MGM', 'ot_mgm', 3], ['Payroll for cinema staff', 'payroll_staff'], ['Lương phụ trội staff', 'ot_staff', 3], ['b. Stationary', 'stationery_total', 1], ['c. Utilities', 'utilities', 1], ['Electricity and power', 'electricity'], ['Chỉ số điện (kWh)', 'elec_index', 4], ['kWh / Operation Hour', 'elec_ph', 5], ['Cleaning (dịch vụ & DCVS)', 'cleaning'], ['Care', 'care'], ['Others', 'others'], ['Controllable Cost', 'ctrl', 2]];
   const recs = Array.from({ length: 12 }, (_, i) => agg(P.c, P.y, [i + 1]));
   const yc = P.ytd, yl = P.ytdLy && !P.ytdLy.partial ? P.ytdLy : null; const okv = (o, f) => o && fin(o[f]) && !(['ctrl', 'payroll'].includes(f) && o.payroll_gap) ? Math.abs(o[f]) : null;
-  const mt = `<div class="card tw" style="margin-top:12px"><div class="ct">Chi phí theo tháng ${P.y}</div><table><thead><tr><th>Hạng mục</th>${recs.map((x, i) => `<th class="${P.M.includes(i + 1) ? 'on' : ''}">${mlab(i + 1)}</th>`).join('')}<th class="sep">YTD</th><th>YTD LY</th><th>vs LY</th></tr></thead><tbody>${ML.map(([l, f, t]) => { const fm = t === 4 ? f0 : t === 5 ? f1 : f1; const ok = (x) => x && fin(x[f]) && !(f === 'ctrl' && x.payroll_gap); return `<tr class="${t === 2 ? 'tot' : t === 1 ? 'grp b' : t >= 3 ? 'l2' : 'l1'}"><td>${l}</td>${recs.map((x) => `<td>${ok(x) ? fm(Math.abs(x[f])) : '–'}</td>`).join('')}<td class="sep">${t === 5 ? f1(yc && yc.elec_ph) : fm(okv(yc, f))}</td><td>${t === 5 ? f1(yl && yl.elec_ph) : fm(okv(yl, f))}</td><td class="${tone('cost', ch(t === 5 ? yc && yc.elec_ph : okv(yc, f), t === 5 ? yl && yl.elec_ph : okv(yl, f)))}">${dp(ch(t === 5 ? yc && yc.elec_ph : okv(yc, f), t === 5 ? yl && yl.elec_ph : okv(yl, f)))}</td></tr>`; }).join('')}</tbody></table></div>`;
+  const mt = `<div class="card tw" style="margin-top:12px"><div class="ct">Chi phí theo tháng ${P.y}</div><table><thead><tr><th>Hạng mục</th>${recs.map((x, i) => `<th class="${P.M.includes(i + 1) ? 'on' : ''}">${mlab(i + 1)}</th>`).join('')}<th class="sep">YTD</th><th>YTD LY</th><th>vs LY</th></tr></thead><tbody>${ML.map(([l, f, t]) => { const fm = t === 5 ? fR : f0; const ok = (x) => x && fin(x[f]) && !(f === 'ctrl' && x.payroll_gap); return `<tr class="${t === 2 ? 'tot' : t === 1 ? 'grp b' : t >= 3 ? 'l2' : 'l1'}"><td>${l}</td>${recs.map((x) => `<td>${ok(x) ? fm(Math.abs(x[f])) : '–'}</td>`).join('')}<td class="sep">${t === 5 ? fR(yc && yc.elec_ph) : fm(okv(yc, f))}</td><td>${t === 5 ? fR(yl && yl.elec_ph) : fm(okv(yl, f))}</td><td class="${tone('cost', ch(t === 5 ? yc && yc.elec_ph : okv(yc, f), t === 5 ? yl && yl.elec_ph : okv(yl, f)))}">${dp(ch(t === 5 ? yc && yc.elec_ph : okv(yc, f), t === 5 ? yl && yl.elec_ph : okv(yl, f)))}</td></tr>`; }).join('')}</tbody></table></div>`;
   return `${t1}${band}${mt}`;
 }
 
@@ -1102,7 +1120,7 @@ async function readBook(file, maxCols) {
 }
 // One button: detect each file (Vista PDF, Ops Business Plan, Programming Monthly Report), preview, then save together.
 async function uploadAny(files) {
-  const m = modal(`<h3>Tải dữ liệu</h3><div class="sub">Nhận PDF Vista Marketing Report, Ops Business Plan, Programming Monthly Report và báo cáo Lương & Headcount. App tự nhận loại file, đối chiếu rồi mới lưu.</div><div id="upRes">Đang đọc ${files.length} file…</div><div class="mfoot"><button class="btn" data-close>Đóng</button><button class="btn pri" id="upSave" disabled>Lưu vào dữ liệu</button></div>`);
+  const m = modal(`<h3>Tải dữ liệu</h3><div id="upRes">Đang đọc ${files.length} file…</div><div class="mfoot"><button class="btn" data-close>Đóng</button><button class="btn pri" id="upSave" disabled>Lưu vào dữ liệu</button></div>`);
   const res = []; const save = { vista: {}, bp: {}, market: {}, hc: {}, plan: {} };
   for (const f of files) {
     const r = { file: f.name, type: '?', what: '', check: '', ok: false };
@@ -1111,8 +1129,8 @@ async function uploadAny(files) {
         const v = parseVista(await pdfItems(f)); v.file = f.name; v.cinema = cinemaFromName(v.cinemaName); v.uploadedAt = new Date().toISOString();
         if (!v.cinema) v.warnings.push('Không nhận ra rạp: ' + (v.cinemaName || '?')); if (!v.films.length) v.warnings.push('Không đọc được bảng phim');
         r.type = 'PDF Vista'; r.what = `${v.cinema || v.cinemaName || '?'} · ${v.month ? mlab(v.month) + '/' + v.year : '?'} · ${f0(v.kpi.adm)} admit · ${v.films.length} phim · ${v.tickets.length} ticket type · ${v.combos.length} combo`;
-        r.ok = !!(v.cinema && v.year && v.month && v.kpi.adm); r.check = v.warnings.join('; ');
-        if (r.ok) { if (vGet(v.cinema, v.year, v.month)) r.note = 'Ghi đè bản cũ'; save.vista[K(v.cinema, v.year, v.month)] = v; }
+        r.ok = !!(v.cinema && v.year && v.month && v.kpi.adm); r.check = v.warnings.join('; '); r.note = (v.adjust || []).join('; ');
+        if (r.ok) { if (vGet(v.cinema, v.year, v.month)) r.note = ['Ghi đè bản cũ', r.note].filter(Boolean).join('; '); save.vista[K(v.cinema, v.year, v.month)] = v; }
       } else if (/\.xlsx?$/i.test(f.name)) {
         const book = await readBook(f, 130);
         const isProg = Object.values(book).some((R) => R.slice(0, 5).some((row) => (row || []).some((x) => typeof x === 'string' && /PROGRAMMING MONTHLY REPORT/i.test(x))));
@@ -1276,7 +1294,7 @@ async function exportExcel() {
   const sheets = {}; for (const nm of Object.keys(path)) sheets[nm] = new XSheet(await zip.file(path[nm]).async('string'));
   // style tham chiếu lấy từ chính mẫu
   const R = sheets.PHI; const S0 = { title: R.style('B1'), sec: R.style('B35'), head: R.style('C39'), lab: R.style('B40'), labB: R.style('B51'), int: R.style('C40'), intB: R.style('C51') };
-  S0.dec1 = st.clone(S0.int, 166); S0.dec1B = st.clone(S0.intB, 166); S0.dec2 = st.clone(S0.int, 4); S0.pct = st.clone(S0.int, 164); S0.pctB = st.clone(S0.intB, 164);
+  S0.dec1 = st.clone(S0.int, 166); S0.dec1B = st.clone(S0.intB, 166); S0.dec2 = st.clone(S0.int, 166); S0.pct = st.clone(S0.int, 164); S0.pctB = st.clone(S0.intB, 164);
   S0.money = st.clone(S0.int, 3); S0.moneyB = st.clone(S0.intB, 3);
   const per = plabel(S.year, S.months); const vis = CINV(); const refs = {};
   for (const ci of vis) refs[ci.code] = fillCinema(sheets[ci.code], ci, period(ci.code), S0);
@@ -1332,11 +1350,16 @@ function fillCinema(sh, ci, P, S0) {
   const online = (v) => (v ? (v.channel.find((x) => x.channel === 'Online') || {}).adm ?? null : null);
   const YT = (() => { const v = vistaPeriod(c, y, P.ytdM); return v && v.complete ? v : null; })(), YL = (() => { const v = vistaPeriod(c, y - 1, P.ytdM); return v && v.complete ? v : null; })();
   put('C60', online(Vc)); put('D60', online(VP)); put('E60', online(VL)); put('L60', online(YT)); put('M60', online(YL));
-  const CL = [[64, 'CO Combo'], [65, 'CO Drinks'], [66, 'CO Food'], [67, 'CO Online'], [69, 'Cine Munch/Blv'], [70, 'Movie Combo']];
-  const clsOf = (v) => { if (!v) return null; const o = { ...v.cls }; o['Cine Munch/Blv'] = Object.entries(v.cls).filter(([k]) => /^F&B /.test(k)).reduce((a, [, x]) => a + x, 0); return o; };
+  const CL = [[64, 'CO Combo'], [65, 'CO Drinks'], [66, 'CO Food'], [67, 'CO Online'], [68, 'Khác'], [69, 'Cine Munch/Blv'], [70, 'Movie Combo']];
+  const BASE = ['CO Combo', 'CO Drinks', 'CO Food', 'CO Online', 'Movie Combo'];
+  // Cine Munch/Blv = các class F&B…; class ngoài mẫu (Snack Vi, phần chênh lệch với Concession Sales Net…) gom vào dòng Khác để Total khớp NCO
+  const clsOf = (v) => { if (!v) return null; const o = {}; BASE.forEach((k) => (o[k] = v.cls[k] ?? null)); let fb = 0, ot = 0, anyO = false;
+    Object.entries(v.cls).forEach(([k, x]) => { if (BASE.includes(k)) return; if (/^F&B /.test(k)) fb += x; else if (x) { ot += x; anyO = true; } });
+    o['Cine Munch/Blv'] = fb; o['Khác'] = anyO ? ot : null; return o; };
   const cr = isApr26(P) ? Object.fromEntries(SEED.coclass.filter((r) => r.cinema === c).map((r) => [r.item_class, r])) : {};
   const [cC, cP, cL, cY, cYL] = [clsOf(Vc), clsOf(VP), clsOf(VL), clsOf(YT), clsOf(YL)];
   const k1 = (v) => (fin(v) ? v * 1000 : null);
+  put('B68', [cC, cP, cL, cY, cYL].some((o) => o && fin(o['Khác'])) ? 'Khác' : null);
   CL.forEach(([r, k]) => { const f = cr[k] || {};
     put('C' + r, k1(cC ? cC[k] : f.net_tm)); put('D' + r, k1(cP ? cP[k] : f.net_lm)); put('E' + r, k1(cL ? cL[k] : f.net_ly)); put('L' + r, k1(cY ? cY[k] : f.net_ytd)); put('M' + r, k1(cYL ? cYL[k] : f.net_ytd_ly)); });
   [93, 95, 96].forEach((r) => ['C', 'D', 'E', 'L', 'M'].forEach((L) => put(L + r, null))); // chưa có nguồn tách Extra/U22/Group combo
@@ -1376,7 +1399,7 @@ function extras(sh, ci, P, V, VL, S0) {
   // Top film
   sec('Top film');
   if (V && V.films.length) { head(['Phim', 'Suất', 'Admit', '% Admit', 'Admit/suất', 'NBO', 'ATP', 'Khởi chiếu', 'Loại', 'Admit LY']); const L = VL ? Object.fromEntries(VL.films.map((f) => [f.film, f.adm])) : {}; const r0 = r, list = V.films.slice(0, 15), r1 = r + list.length - 1;
-    list.forEach((f) => { const nw = isNewFilm(f, P.y, P.M); row([f.film, f.sessions, f.adm, F(`=IFERROR(D${r}/SUM($D$${r0}:$D$${r1}),"-")`), F(`=IFERROR(D${r}/C${r},"-")`), f.nbo, F(`=IFERROR(G${r}/D${r}*10^3,"-")`), f.opening || '', nw === true ? 'Mới' : nw === false ? 'Chuyển tiếp' : '', L[f.film] ?? null], ['int', 'int', 'pct', 'dec1', 'dec1', 'dec1', 'int', 'int', 'int']); });
+    list.forEach((f) => { const nw = isNewFilm(f, P.y, P.M); row([f.film, f.sessions, f.adm, F(`=IFERROR(D${r}/SUM($D$${r0}:$D$${r1}),"-")`), F(`=IFERROR(D${r}/C${r},"-")`), f.nbo, F(`=IFERROR(G${r}/D${r}*10^3,"-")`), f.opening || '', nw === true ? 'Mới' : nw === false ? 'Chuyển tiếp' : '', L[f.film] ?? null], ['int', 'int', 'pct', 'dec1', 'int', 'dec1', 'int', 'int', 'int']); });
     const nN = V.films.filter((f) => isNewFilm(f, P.y, P.M) === true);
     row(['Số lượng film', V.films.length], ['int'], true); row(['Film mới khởi chiếu trong kỳ', nN.length], ['int']); row(['Film chuyển tiếp từ kỳ trước', V.films.length - nN.length], ['int']);
     row(['% admit từ film mới', nN.reduce((a, f) => a + f.adm, 0) / V.films.reduce((a, f) => a + f.adm, 0)], ['pct']); }
@@ -1385,9 +1408,9 @@ function extras(sh, ci, P, V, VL, S0) {
   // Top 10 CO items
   sec('Top 10 CO items');
   if (V && V.combos.length) { head(['Item', 'SL', 'Net', '% NCO', 'SPP', 'SL LY', 'Net LY', 'vs LY']); const L = VL ? Object.fromEntries(VL.combos.map((q) => [q.item, q])) : {}; const r0 = r;
-    V.combos.slice(0, 10).forEach((x) => { const l = L[x.item]; row([x.item, x.qty, x.net, F(`=IFERROR(D${r}/${V.co_net},"-")`), F(`=IFERROR(D${r}*1000/${V.adm},"-")`), l ? l.qty : null, l ? l.net : null, F(`=IFERROR(D${r}/H${r}-1,"-")`)], ['int', 'dec1', 'pct', 'dec2', 'int', 'dec1', 'pct']); });
-    row(['Tổng top 10', F(`=SUM(C${r0}:C${r - 1})`), F(`=SUM(D${r0}:D${r - 1})`), F(`=IFERROR(D${r}/${V.co_net},"-")`), F(`=IFERROR(D${r}*1000/${V.adm},"-")`), null, F(`=IF(COUNT(H${r0}:H${r - 1})=0,"",SUM(H${r0}:H${r - 1}))`), F(`=IFERROR(D${r}/H${r}-1,"-")`)], ['int', 'dec1', 'pct', 'dec2', 'int', 'dec1', 'pct'], true);
-    if (V.items.length) { r++; head(['Top 10 món theo doanh thu', 'Net', 'Margin', '% Margin']); V.items.forEach((x) => row([x.item, x.net, x.mOk ? x.margin : null, F(`=IFERROR(D${r}/C${r},"-")`)], ['dec1', 'dec1', 'pct'])); } }
+    V.combos.slice(0, 10).forEach((x) => { const l = L[x.item]; row([x.item, x.qty, x.net, F(`=IFERROR(D${r}/${V.co_net},"-")`), F(`=IFERROR(D${r}*1000/${V.adm},"-")`), l ? l.qty : null, l ? l.net : null, F(`=IFERROR(D${r}/H${r}-1,"-")`)], ['int', 'int', 'pct', 'dec2', 'int', 'int', 'pct']); });
+    row(['Tổng top 10', F(`=SUM(C${r0}:C${r - 1})`), F(`=SUM(D${r0}:D${r - 1})`), F(`=IFERROR(D${r}/${V.co_net},"-")`), F(`=IFERROR(D${r}*1000/${V.adm},"-")`), null, F(`=IF(COUNT(H${r0}:H${r - 1})=0,"",SUM(H${r0}:H${r - 1}))`), F(`=IFERROR(D${r}/H${r}-1,"-")`)], ['int', 'int', 'pct', 'dec2', 'int', 'int', 'pct'], true);
+    if (V.items.length) { r++; head(['Top 10 món theo doanh thu', 'Net', 'Margin', '% Margin']); V.items.forEach((x) => row([x.item, x.net, x.mOk ? x.margin : null, F(`=IFERROR(D${r}/C${r},"-")`)], ['int', 'int', 'pct'])); } }
   else row(['Chưa có số top combo cho kỳ này'], []);
   r++; NT.coitems.forEach((f) => noteRow(f)); r += 2;
   // Chi phí theo tháng
@@ -1396,7 +1419,7 @@ function extras(sh, ci, P, V, VL, S0) {
   head(['Hạng mục', ...Array.from({ length: 12 }, (_, i) => mlab(i + 1)), `YTD ${mlab(1)}–${mlab(mx)}`, 'YTD LY', 'vs LY']);
   const LE = colLet(2 + mx);
   const ML = [['Payroll', 'payroll', 1], ['Payroll for Manager', 'payroll_mgm'], ['Lương phụ trội MGM', 'ot_mgm'], ['Payroll for cinema staff', 'payroll_staff'], ['Lương phụ trội staff', 'ot_staff'], ['Stationary', 'stationery_total', 1], ['Utilities', 'utilities', 1], ['Electricity and power', 'electricity'], ['Electricity index (kWh)', 'elec_index', 0, 'int'], ['Operation Hour', 'op_hour', 0, 'int'], ['Cleaning (dịch vụ & DCVS)', 'cleaning'], ['Care', 'care'], ['Others', 'others'], ['kWh thấp điểm', 'kwh_low', 0, 'int'], ['kWh trung điểm', 'kwh_mid', 0, 'int'], ['kWh cao điểm', 'kwh_peak', 0, 'int']];
-  ML.forEach(([l, f, b, fmt]) => { const ab = (o) => (o && fin(o[f]) && o[f] !== 0 && !(['payroll', 'payroll_mgm', 'payroll_staff'].includes(f) && o.payroll_gap) ? Math.abs(o[f]) : null); const ty = fmt || 'dec1';
+  ML.forEach(([l, f, b, fmt]) => { const ab = (o) => (o && fin(o[f]) && o[f] !== 0 && !(['payroll', 'payroll_mgm', 'payroll_staff'].includes(f) && o.payroll_gap) ? Math.abs(o[f]) : null); const ty = fmt || 'int';
     row([l, ...recs.map(ab), F(`=IF(COUNT(C${r}:${LE}${r})=0,"",SUM(C${r}:${LE}${r}))`), ab(ly), F(`=IFERROR(O${r}/P${r}-1,"-")`)], [...Array(13).fill(ty), ty, 'pct'], !!b); });
   row(['Tổng kWh theo khung giờ', ...Array.from({ length: 12 }, (_, i) => F(`=IF(COUNT(${colLet(3 + i)}${r - 3}:${colLet(3 + i)}${r - 1})=0,"",SUM(${colLet(3 + i)}${r - 3}:${colLet(3 + i)}${r - 1}))`)), F(`=IF(COUNT(C${r}:${LE}${r})=0,"",SUM(C${r}:${LE}${r}))`)], Array(13).fill('int'), true);
   r++; NT.opex.forEach((f) => noteRow(f)); r += 2;
