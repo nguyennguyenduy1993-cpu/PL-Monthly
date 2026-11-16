@@ -204,7 +204,7 @@ window.FIREBASE_CONFIG = {
   const NUM = /^-?[\d,]*\.?\d+$/;
   const fin = (x) => typeof x === 'number' && isFinite(x);
   const num = (s) => (s == null ? null : Number(String(s).replace(/,/g, '')));
-  function lines(page) {
+  function lines(page, loose) {
     const its = page.items.filter((i) => i.str && i.str.trim() !== '').slice().sort((a, b) => a.y - b.y || a.x - b.x);
     const L = [];
     for (const it of its) {
@@ -220,8 +220,9 @@ window.FIREBASE_CONFIG = {
         const c = cells[cells.length - 1];
         const gap = c ? it.x - c.x1 : 99;
         const sp = Math.max(2.2, (it.h || 8) * 0.6);
-        if (c && gap < sp) { c.t += (gap > 0.9 && !/\s$/.test(c.t) && !/^\s/.test(it.str) ? ' ' : '') + it.str; c.x1 = it.x + it.w; }
-        else cells.push({ x: it.x, x1: it.x + it.w, t: it.str });
+        const w = loose ? String(it.str).length * (it.h || 8) * 0.45 : it.w; // loose: không tin độ rộng item, mỗi item là một từ
+        if (c && gap < sp) { c.t += ((loose || gap > 0.9) && !/\s$/.test(c.t) && !/^\s/.test(it.str) ? ' ' : '') + it.str; c.x1 = it.x + w; }
+        else cells.push({ x: it.x, x1: it.x + w, t: it.str });
       }
       cells.forEach((c) => (c.t = c.t.replace(/\s+/g, ' ').trim()));
       ln.cells = cells.filter((c) => c.t !== '');
@@ -247,9 +248,14 @@ window.FIREBASE_CONFIG = {
     const fix = (t) => (/^-?\d[\d.,]*$/.test(t) && /[.,]/.test(t) ? t.replace(/\./g, '').replace(',', '.') : t);
     return { locale: 'vi', pages: pages.map((p) => ({ ...p, items: p.items.map((it) => ({ ...it, str: String(it.str || '').split(/(\s+)/).map(fix).join('') })) })) };
   }
+  // đọc 2 cách (theo độ rộng chữ của PDF / mỗi item một từ), lấy kết quả đầy đủ hơn
   function parseVista(pages0) {
+    const a = parseOnce(pages0, false); const sc = (r) => r.films.length + r.cls.length + r.tickets.length + r.combos.length + (r.kpi.adm ? 20 : 0) + (r.channel.length ? 5 : 0);
+    if (sc(a) >= 60) return a; const b = parseOnce(pages0, true); return sc(b) > sc(a) ? b : a;
+  }
+  function parseOnce(pages0, loose) {
     const nn = normNumbers(pages0), pages = nn.pages;
-    const all = []; pages.forEach((p, pi) => lines(p).forEach((l) => { l.page = pi; all.push(l); }));
+    const all = []; pages.forEach((p, pi) => lines(p, loose).forEach((l) => { l.page = pi; all.push(l); }));
     const out = { numLocale: nn.locale, cinemaName: null, from: null, to: null, year: null, month: null, kpi: {}, films: [], channel: [], lead: [], group: null, payBO: [], payCO: [], cls: [], items: [], warnings: [] };
     // header
     const first = all.filter((l) => l.page === 0).slice(0, 3);
@@ -322,12 +328,13 @@ window.FIREBASE_CONFIG = {
     }
     // concession class (left of "Top 10 Box Office Sundries")
     const iC = idx(/Concession Class Analysis/);
-    if (iC >= 0) {
-      const sc = all[iC].cells.find((c) => /Sundries/.test(c.t)); const xs = sc ? sc.x - 40 : 420;
-      for (let i = iC + 1; i < all.length; i++) {
-        const L = textIn(all[i], 0, xs); if (!L || /^Value\b/.test(L)) continue;
-        if (/^Total\b/.test(L)) break;
-        const r = tail(L, 3); if (r) out.cls.push({ item_class: r.name, net: r.nums[0] / 1000, pct: r.nums[1] / 100, per_admit: r.nums[2] });
+    if (iC >= 0) { // không dựa vào vị trí cột: lấy tên class + 3 số đầu tiên của mỗi dòng (bảng Sundries bên phải bị bỏ qua)
+      for (let i = iC + 1; i < Math.min(all.length, iC + 40); i++) {
+        const t = tokens(all[i].text); if (!t.length) continue;
+        if (t[0] === 'Total') break;
+        const j = t.findIndex((x) => NUM.test(x)); if (j < 1 || t.length < j + 3 || !t.slice(j, j + 3).every((x) => NUM.test(x))) continue;
+        const name = t.slice(0, j).join(' '); if (/^(Value|Item Class|Class)\b/i.test(name)) continue;
+        const n = t.slice(j, j + 3).map(num); out.cls.push({ item_class: name, net: n[0] / 1000, pct: n[1] / 100, per_admit: n[2] });
       }
     }
     // top 10 concession items: three column groups
