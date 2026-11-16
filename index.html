@@ -237,9 +237,20 @@ window.FIREBASE_CONFIG = {
     const ns = t.slice(-k); if (!ns.every((x) => NUM.test(x))) return null;
     return { name: t.slice(0, -k).join(' '), nums: ns.map(num) };
   }
-  function parseVista(pages) {
+  // Số trong PDF có thể ra theo kiểu Việt Nam (27.245 / 2.354.807,25) tùy máy đọc: quy về 27245 / 2354807.25
+  const VI_ONLY = [/^-?\d{1,3}(\.\d{3}){2,}(,\d+)?$/, /^-?\d{1,3}(\.\d{3})+,\d+$/, /^-?\d+,\d{1,2}$/];
+  const EN_ONLY = [/^-?\d{1,3}(,\d{3}){2,}(\.\d+)?$/, /^-?\d{1,3}(,\d{3})+\.\d+$/, /^-?\d+\.\d{1,2}$/];
+  function normNumbers(pages) {
+    let vi = 0, en = 0;
+    pages.forEach((p) => p.items.forEach((it) => String(it.str || '').split(/\s+/).forEach((t) => { if (VI_ONLY.some((r) => r.test(t))) vi++; else if (EN_ONLY.some((r) => r.test(t))) en++; })));
+    if (vi <= en) return { pages, locale: 'en' };
+    const fix = (t) => (/^-?\d[\d.,]*$/.test(t) && /[.,]/.test(t) ? t.replace(/\./g, '').replace(',', '.') : t);
+    return { locale: 'vi', pages: pages.map((p) => ({ ...p, items: p.items.map((it) => ({ ...it, str: String(it.str || '').split(/(\s+)/).map(fix).join('') })) })) };
+  }
+  function parseVista(pages0) {
+    const nn = normNumbers(pages0), pages = nn.pages;
     const all = []; pages.forEach((p, pi) => lines(p).forEach((l) => { l.page = pi; all.push(l); }));
-    const out = { cinemaName: null, from: null, to: null, year: null, month: null, kpi: {}, films: [], channel: [], lead: [], group: null, payBO: [], payCO: [], cls: [], items: [], warnings: [] };
+    const out = { numLocale: nn.locale, cinemaName: null, from: null, to: null, year: null, month: null, kpi: {}, films: [], channel: [], lead: [], group: null, payBO: [], payCO: [], cls: [], items: [], warnings: [] };
     // header
     const first = all.filter((l) => l.page === 0).slice(0, 3);
     for (const l of first) { const c = l.cells.find((c) => /^Galaxy/i.test(c.t)); if (c) { out.cinemaName = c.t; break; } }
@@ -997,8 +1008,7 @@ function coclass(V, P) {
   const sp = (v, a) => (fin(v) && a ? f2((v * 1000) / a) : '–');
   const tb = rows.map((r) => `<tr><td class="t">${esc(r.k)}</td><td>${f1(r.tm)}</td><td>${pc(r.tm / T)}</td><td>${sp(r.tm, adm)}</td><td>${f1(r.prev)}</td><td class="${tone('money', ch(r.tm, r.prev))}">${dp(ch(r.tm, r.prev))}</td><td>${f1(r.ly)}</td><td>${sp(r.ly, ladm)}</td><td class="${tone('money', ch(r.tm, r.ly))}">${dp(ch(r.tm, r.ly))}</td></tr>`).join('')
     + `<tr class="tot"><td>Tổng F&B</td><td>${f1(T)}</td><td>100.0%</td><td>${sp(T, adm)}</td><td>${TP ? f1(TP) : '–'}</td><td class="${tone('money', ch(T, TP || null))}">${dp(ch(T, TP || null))}</td><td>${TL ? f1(TL) : '–'}</td><td>${TL ? sp(TL, ladm) : '–'}</td><td class="${tone('money', ch(T, TL || null))}">${dp(ch(T, TL || null))}</td></tr>`;
-  let pay = '';
-  if (V) { const PC = Object.entries(V.payCO).sort((a, b) => b[1] - a[1]).slice(0, 8); pay = `<div class="ct sub">Thanh toán F&B (triệu)</div>` + shareTable('Phương thức', PC.map(([l, v]) => ({ label: l, v })), L ? L.payCO : null, f1); }
+  const pay = '';
   return `<div class="card tw"><table><thead><tr><th class="t">Item class</th><th>Net sale</th><th>% F&B</th><th>SPP</th><th>Kỳ trước</th><th>vs kỳ trước</th><th>LY</th><th>SPP LY</th><th>vs LY</th></tr></thead><tbody>${tb}</tbody></table></div>${pay}`;
 }
 
