@@ -171,6 +171,8 @@ table.cmp tr.gh th{text-align:center;border-bottom:1px solid var(--line);color:v
 table.cmp th.sep,table.cmp td.sep{border-left:1px solid var(--line)}
 table.cmp tr.grp td{background:#FAFAF8;font-weight:600;color:var(--ink)}
 .cs2{color:var(--mut2);font-size:11px;font-weight:400}
+
+.nt .ngh{margin:14px 0 2px;font-size:12px;font-weight:700;color:var(--ink);text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--line);padding-bottom:4px}.nt .ngh:first-of-type{margin-top:6px}
 </style>
 </head>
 <body>
@@ -790,37 +792,38 @@ function comboNotes(P, Y, X, add) {
   const A1 = (agg(P.c, P.y, Y.cur.months) || {}).adm; const M1 = comboMatrix(Y.cur);
   const sh = (M, k, ch2) => (M.Q ? M.m[k][ch2].q / M.Q : null), pr = (M, k) => { const q = M.m[k].c.q + M.m[k].o.q; return q ? (M.m[k].c.n + M.m[k].o.n) / q : null; };
   const on1 = CT.reduce((s, [k]) => s + M1.m[k].o.q, 0) / M1.Q;
-  add('coclass', 'flat', `Combo: ${f0(M1.Q)} phần, ${fR(A1 ? (M1.Q / A1) * 100 : null)} phần/100 khách, giá bình quân ${fR(M1.N / M1.Q)} nghìn đ/phần; ${pc(on1)} số phần bán online.`);
-  if (!base) { const ex = (M1.m.extra.c.q + M1.m.extra.o.q) / M1.Q; if (ex < 0.35) add('coclass', 'warn', `Extra chiếm ${pc(ex)} số phần combo (quầy ${pc(sh(M1, 'extra', 'c'))}, online ${pc(sh(M1, 'extra', 'o'))}).`, 'Đẩy upsell từ combo thường lên Extra tại quầy; đề xuất HO đặt Extra làm lựa chọn mặc định trên app.'); return; }
+  add('coclass', 'flat', `Tổng: ${f0(M1.Q)} phần, ${fR(A1 ? (M1.Q / A1) * 100 : null)} phần/100 khách, giá bình quân ${fR(M1.N / M1.Q)} nghìn đ/phần; ${pc(on1)} số phần bán online.`, '', 'Combo tổng quan');
+  if (!base) { const ex = (M1.m.extra.c.q + M1.m.extra.o.q) / M1.Q; if (ex < 0.35) add('coclass', 'warn', `Extra chiếm ${pc(ex)} số phần combo (quầy ${pc(sh(M1, 'extra', 'c'))}, online ${pc(sh(M1, 'extra', 'o'))}).`, 'Đẩy upsell từ combo thường lên Extra tại quầy; đề xuất HO đặt Extra làm lựa chọn mặc định trên app.', 'Combo Extra'); return; }
   const A0 = (agg(P.c, base.y, base.o.months) || {}).adm; const M0 = comboMatrix(base.o);
   const on0 = CT.reduce((s, [k]) => s + M0.m[k].o.q, 0) / M0.Q; const pen1 = A1 ? M1.Q / A1 : null, pen0 = A0 ? M0.Q / A0 : null;
-  add('coclass', 'flat', `So với ${base.lab}: số phần/100 khách ${fR(pen1 * 100)} (${dp(ch(pen1, pen0))}); tỷ trọng phần bán online ${pc(on1)} (${dpt(on1 - on0)}).${Math.abs(ch(pen1, pen0) || 0) < 0.03 ? ' Số phần/khách gần như không đổi: tăng ở loại này chủ yếu là lấy từ loại khác.' : ''}`);
+  add('coclass', 'flat', `So với ${base.lab}: số phần/100 khách ${fR(pen1 * 100)} (${dp(ch(pen1, pen0))}); tỷ trọng phần bán online ${pc(on1)} (${dpt(on1 - on0)}).${Math.abs(ch(pen1, pen0) || 0) < 0.03 ? ' Số phần/khách gần như không đổi: tăng ở loại này chủ yếu là lấy từ loại khác.' : ''}`, '', 'Combo tổng quan');
   // ma trận loại × kênh: tỷ trọng số phần và thay đổi
   const cells = []; CT.forEach(([k, l]) => ['c', 'o'].forEach((ch2) => cells.push({ k, l, ch2, s1: sh(M1, k, ch2), s0: sh(M0, k, ch2), d: sh(M1, k, ch2) - sh(M0, k, ch2) })));
-  add('coclass', 'flat', `Cơ cấu số phần (quầy / online, thay đổi so với ${base.lab}): ${CT.map(([k, l]) => { const c = cells.find((x) => x.k === k && x.ch2 === 'c'), o = cells.find((x) => x.k === k && x.ch2 === 'o'); return `${l} ${pc(c.s1)} (${dpt(c.d)}) / ${pc(o.s1)} (${dpt(o.d)})`; }).join('; ')}.`);
   const CHN = { c: 'tại quầy', o: 'online' }; const gain = cells.filter((x) => x.d > 0.01).sort((a, b) => b.d - a.d), loss = cells.filter((x) => x.d < -0.01).sort((a, b) => a.d - b.d);
-  if (gain.length && loss.length) add('coclass', 'warn', `Dịch chuyển giữa các loại combo: tăng ${gain.map((x) => `${x.l} ${CHN[x.ch2]} ${dpt(x.d)}${x.s0 < 0.005 ? ' (mới mở)' : ''}`).join(', ')}; giảm ${loss.map((x) => `${x.l} ${CHN[x.ch2]} ${dpt(x.d)}`).join(', ')}. Mỗi khách chỉ chọn 1 combo nên phần tăng ở trên đến từ phần giảm ở dưới.`);
+  const fmtC = (x) => `${x.l} ${CHN[x.ch2]} ${dpt(x.d)}${x.s0 < 0.005 ? ' (mới mở)' : ''}`;
+  const flow = (k) => { const g2 = gain.filter((x) => x.k === k), l2 = loss.filter((x) => x.k === k); const og = gain.filter((x) => x.k !== k), ol = loss.filter((x) => x.k !== k); const out = [];
+    if (g2.length && ol.length) out.push(`Phần tăng đến từ: ${ol.map(fmtC).join(', ')}.`); if (l2.length && og.length) out.push(`Khách chuyển sang: ${og.map(fmtC).join(', ')}.`); return out.length ? ' ' + out.join(' ') : ''; };
   // tác động lên giá bình quân/phần: do cơ cấu vs do giá từng loại
   const p0 = {}; CT.forEach(([k]) => (p0[k] = pr(M0, k)));
   const mixE = cells.reduce((s, x) => s + (fin(p0[x.k]) ? x.d * p0[x.k] : 0), 0), avg1 = M1.N / M1.Q, avg0 = M0.N / M0.Q, priceE = avg1 - avg0 - mixE;
-  add('coclass', avg1 >= avg0 ? 'good' : 'bad', `Giá bình quân combo ${fR(avg1)} nghìn đ/phần (${dp(ch(avg1, avg0))} so với ${base.lab}): do cơ cấu loại/kênh ${mixE >= 0 ? '' : '-'}${fR(Math.abs(mixE))} nghìn đ, do giá trong từng loại ${priceE >= 0 ? '' : '-'}${fR(Math.abs(priceE))} nghìn đ. Quy ra SPP combo: cơ cấu tác động ${fR(mixE * pen1)} nghìn đ/khách.`);
+  add('coclass', avg1 >= avg0 ? 'good' : 'bad', `Giá bình quân combo ${fR(avg1)} nghìn đ/phần (${dp(ch(avg1, avg0))} so với ${base.lab}): do cơ cấu loại/kênh ${mixE >= 0 ? '' : '-'}${fR(Math.abs(mixE))} nghìn đ, do giá trong từng loại ${priceE >= 0 ? '' : '-'}${fR(Math.abs(priceE))} nghìn đ. Quy ra SPP combo: cơ cấu tác động ${fR(mixE * pen1)} nghìn đ/khách.`, '', 'Combo tổng quan');
   // gợi ý theo từng loại
   const C = (k, ch2) => cells.find((x) => x.k === k && x.ch2 === ch2);
   const ex = [C('extra', 'c'), C('extra', 'o')], st = [C('standard', 'c'), C('standard', 'o')], u = [C('u22', 'c'), C('u22', 'o')], gr = [C('group', 'c'), C('group', 'o')];
   const exT = ex[0].d + ex[1].d, stT = st[0].d + st[1].d, uT = u[0].d + u[1].d, grT = gr[0].d + gr[1].d;
-  add('coclass', exT < -0.01 ? 'bad' : exT > 0.01 ? 'good' : 'flat', `Extra: ${pc(ex[0].s1 + ex[1].s1)} số phần (${dpt(exT)}); tại quầy ${dpt(ex[0].d)}, online ${dpt(ex[1].d)}. Giá ${fR(pr(M1, 'extra'))} nghìn đ/phần.`,
-    exT < -0.01 ? [on1 - on0 > 0.02 && ex[0].d < -0.01 ? `Một phần do khách chuyển sang mua online (phần bán online ${dpt(on1 - on0)}), nhóm khách này không còn qua quầy để được mời nâng size.` : '', ex[0].d < -0.01 ? 'Với khách vẫn mua tại quầy: kiểm tra kịch bản mời nâng size, giám sát ca cao điểm, đối chiếu tỷ lệ Extra theo nhân viên.' : '', ex[1].d < -0.005 || ex[1].s1 < 0.05 ? 'Online gần như không có Extra: đề xuất HO đặt Extra làm lựa chọn mặc định hoặc ưu đãi nâng size trên app/web.' : ''].filter(Boolean).join(' ') : '');
-  add('coclass', stT < -0.01 ? 'warn' : 'flat', `Combo thường: ${pc(st[0].s1 + st[1].s1)} số phần (${dpt(stT)}); tại quầy ${dpt(st[0].d)}, online ${dpt(st[1].d)}.`,
-    st[1].d > 0.01 ? `Combo thường online tăng ${dpt(st[1].d)}: khách tự chọn combo thường trên app thay vì được mời tại quầy, nên mất cơ hội nâng lên Extra. Đề xuất HO thêm gợi ý nâng lên Extra ở bước chọn combo trên app/web.` : st[0].d > 0.01 ? 'Combo thường tại quầy tăng: cơ hội nâng lên Extra, nhắc nhân viên chào Extra trước.' : '');
-  add('coclass', uT > 0.01 ? 'warn' : 'flat', `U22: ${pc(u[0].s1 + u[1].s1)} số phần (${dpt(uT)}); tại quầy ${dpt(u[0].d)}, online ${dpt(u[1].d)}${u[1].s0 < 0.005 && u[1].s1 > 0 ? ' (U22 online mới mở)' : ''}. Giá ${fR(pr(M1, 'u22'))} nghìn đ/phần so với combo thường ${fR(pr(M1, 'standard'))}, Extra ${fR(pr(M1, 'extra'))}.`,
-    uT > 0.01 ? `U22 giá thấp hơn nên mỗi phần chuyển từ combo thường sang U22 làm mất khoảng ${fR((pr(M1, 'standard') || 0) - (pr(M1, 'u22') || 0))} nghìn đ, từ Extra sang U22 mất ${fR((pr(M1, 'extra') || 0) - (pr(M1, 'u22') || 0))} nghìn đ. Kiểm tra điều kiện áp dụng U22 (đúng đối tượng, đúng khung giờ) và báo HO nếu U22 online đang lấy khách của combo thường/Extra.` : '');
-  add('coclass', grT < -0.01 ? 'warn' : 'flat', `Group: ${pc(gr[0].s1 + gr[1].s1)} số phần (${dpt(grT)}); tại quầy ${dpt(gr[0].d)}, online ${dpt(gr[1].d)}.`, grT < -0.01 ? 'Nhóm khách 3–4 người: chào combo nhóm khi khách mua từ 3 vé trở lên.' : '');
+  add('coclass', stT < -0.01 ? 'warn' : 'flat', `${pc(st[0].s1 + st[1].s1)} số phần combo (${dpt(stT)}); tại quầy ${dpt(st[0].d)}, online ${dpt(st[1].d)}.${flow('standard')}`,
+    st[1].d > 0.01 ? `Combo thường online tăng ${dpt(st[1].d)}: khách tự chọn combo thường trên app thay vì được mời tại quầy, nên mất cơ hội nâng lên Extra. Đề xuất HO thêm gợi ý nâng lên Extra ở bước chọn combo trên app/web.` : st[0].d > 0.01 ? 'Combo thường tại quầy tăng: cơ hội nâng lên Extra, nhắc nhân viên chào Extra trước.' : '', 'Combo thường');
+  add('coclass', exT < -0.01 ? 'bad' : exT > 0.01 ? 'good' : 'flat', `${pc(ex[0].s1 + ex[1].s1)} số phần combo (${dpt(exT)}); tại quầy ${dpt(ex[0].d)}, online ${dpt(ex[1].d)}. Giá ${fR(pr(M1, 'extra'))} nghìn đ/phần.${flow('extra')}`,
+    exT < -0.01 ? [on1 - on0 > 0.02 && ex[0].d < -0.01 ? `Một phần do khách chuyển sang mua online (phần bán online ${dpt(on1 - on0)}), nhóm khách này không còn qua quầy để được mời nâng size.` : '', ex[0].d < -0.01 ? 'Với khách vẫn mua tại quầy: kiểm tra kịch bản mời nâng size, giám sát ca cao điểm, đối chiếu tỷ lệ Extra theo nhân viên.' : '', ex[1].d < -0.005 || ex[1].s1 < 0.05 ? 'Online gần như không có Extra: đề xuất HO đặt Extra làm lựa chọn mặc định hoặc ưu đãi nâng size trên app/web.' : ''].filter(Boolean).join(' ') : '', 'Combo Extra');
+  add('coclass', uT > 0.01 ? 'warn' : 'flat', `${pc(u[0].s1 + u[1].s1)} số phần combo (${dpt(uT)}); tại quầy ${dpt(u[0].d)}, online ${dpt(u[1].d)}${u[1].s0 < 0.005 && u[1].s1 > 0 ? ' (U22 online mới mở)' : ''}. Giá ${fR(pr(M1, 'u22'))} nghìn đ/phần so với combo thường ${fR(pr(M1, 'standard'))}, Extra ${fR(pr(M1, 'extra'))}.${flow('u22')}`,
+    uT > 0.01 ? `U22 giá thấp hơn nên mỗi phần chuyển từ combo thường sang U22 làm mất khoảng ${fR((pr(M1, 'standard') || 0) - (pr(M1, 'u22') || 0))} nghìn đ, từ Extra sang U22 mất ${fR((pr(M1, 'extra') || 0) - (pr(M1, 'u22') || 0))} nghìn đ. Kiểm tra điều kiện áp dụng U22 (đúng đối tượng, đúng khung giờ) và báo HO nếu U22 online đang lấy khách của combo thường/Extra.` : '', 'Combo U22');
+  add('coclass', grT < -0.01 ? 'warn' : 'flat', `${pc(gr[0].s1 + gr[1].s1)} số phần combo (${dpt(grT)}); tại quầy ${dpt(gr[0].d)}, online ${dpt(gr[1].d)}.${flow('group')}`, grT < -0.01 ? 'Nhóm khách 3–4 người: chào combo nhóm khi khách mua từ 3 vé trở lên.' : '', 'Group combo');
 }
 function sectionNotes(c, P, V) {
   S._extraDone = false;
   const N = { overall: [], market: [], film: [], ticket: [], coclass: [], coitems: [], opex: [] };
   const { cur, ly, bp } = P; if (!cur) return N; const st = SEED.std[c] || {}; const n = P.M.length;
-  const add = (s, lv, text, action) => N[s].push({ lv, text, action: action || '' });
+  const add = (s, lv, text, action, grp) => N[s].push({ lv, text, action: action || '', grp: grp || (s === 'coclass' ? 'SPP & cơ cấu F&B' : '') });
   const VL = (() => { const v = vistaPeriod(c, P.y - 1, P.M); return v && v.complete ? v : null; })();
   // Overall
   if (cur.payroll_gap) add('overall', 'warn', `Payroll chưa đủ ở ${(cur.miss.payroll || []).map(mlab).join(', ')}: Controllable cost đang thấp hơn thực tế.`, 'Tải file lương & headcount của tháng còn thiếu trước khi chốt báo cáo.');
@@ -988,7 +991,14 @@ function render() {
   $('#main').innerHTML = h;
   bindYear(P); spy();
 }
-const notes = (L) => `<div class="card nt"><div class="ct">Điểm cần lưu ý</div>${L && L.length ? `<ul class="find">${L.map((f) => `<li class="${f.lv}"><i></i><div>${esc(f.text)}${f.action ? `<div class="a">→ ${esc(f.action)}</div>` : ''}</div></li>`).join('')}</ul>` : '<div class="cs">Chưa đủ dữ liệu để rút ra nhận định cho kỳ này.</div>'}</div>`;
+const NGRP = ['SPP & cơ cấu F&B', 'Combo tổng quan', 'Combo thường', 'Combo Extra', 'Combo U22', 'Group combo'];
+const noteLi = (f) => `<li class="${f.lv}"><i></i><div>${esc(f.text)}${f.action ? `<div class="a">→ ${esc(f.action)}</div>` : ''}</div></li>`;
+const notes = (L) => { if (!L || !L.length) return `<div class="card nt"><div class="ct">Điểm cần lưu ý</div><div class="cs">Chưa đủ dữ liệu để rút ra nhận định cho kỳ này.</div></div>`;
+  const grouped = L.some((f) => f.grp); let body;
+  if (!grouped) body = `<ul class="find">${L.map(noteLi).join('')}</ul>`;
+  else { const gs = [...new Set(L.map((f) => f.grp || ''))].sort((a, b) => (NGRP.indexOf(a) + 99) % 99 - (NGRP.indexOf(b) + 99) % 99);
+    body = gs.map((g) => `${g ? `<div class="ngh">${esc(g)}</div>` : ''}<ul class="find">${L.filter((f) => (f.grp || '') === g).map(noteLi).join('')}</ul>`).join(''); }
+  return `<div class="card nt"><div class="ct">Điểm cần lưu ý</div>${body}</div>`; };
 const vLy = (P) => { const v = vistaPeriod(P.c, P.y - 1, P.M); return v && v.complete ? v : null; };
 const isApr26 = (P) => P.y === 2026 && P.M.length === 1 && P.M[0] === 4;
 // bảng tỷ trọng có cột cùng kỳ: rows [{label, v}], ly {label: v}
@@ -1700,7 +1710,7 @@ function extras(sh, ci, P, V, VL, S0) {
   // Điểm cần lưu ý chung
   sec('Điểm cần lưu ý');
   [['Overall', NT.overall], ['Ticket type', NT.ticket], ['CO sale by item class', NT.coclass]].forEach(([t, L]) => { if (!L.length) return; sh.set('B' + r, t, S0.labB); r++; L.forEach((f) => noteRow(f)); r++; });
-  function noteRow(f) { const LV = { bad: 'Cần xử lý', warn: 'Lưu ý', good: 'Tốt', flat: 'Theo dõi' }; sh.set('B' + r, LV[f.lv], S0.lab); sh.set('C' + r, noPlus(f.text + (f.action ? '  → ' + f.action : '')), S0.lab); r++; }
+  function noteRow(f) { const LV = { bad: 'Cần xử lý', warn: 'Lưu ý', good: 'Tốt', flat: 'Theo dõi' }; sh.set('B' + r, LV[f.lv], S0.lab); sh.set('C' + r, noPlus((f.grp ? '[' + f.grp + '] ' : '') + f.text + (f.action ? '  → ' + f.action : '')), S0.lab); r++; }
 }
 
 function fillSummary(sh, vis, refs, st, per) {
