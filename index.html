@@ -166,6 +166,11 @@ body.locked>*:not(.lock){visibility:hidden}
 .kwh .seg{white-space:nowrap;overflow:hidden;text-overflow:clip}.kwh .seg.sm{font-size:9.5px;letter-spacing:-.2px}
 
 .mhead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}.mhead h3{margin:0}.ysel2{font-size:12px;font-weight:600;display:flex;gap:8px;align-items:center}.ysel2 select{font:inherit;padding:4px 8px;border:1px solid #D6D7D2;border-radius:6px}
+
+table.cmp tr.gh th{text-align:center;border-bottom:1px solid var(--line);color:var(--ink);font-weight:600}
+table.cmp th.sep,table.cmp td.sep{border-left:1px solid var(--line)}
+table.cmp tr.grp td{background:#FAFAF8;font-weight:600;color:var(--ink)}
+.cs2{color:var(--mut2);font-size:11px;font-weight:400}
 </style>
 </head>
 <body>
@@ -292,6 +297,9 @@ window.FIREBASE_CONFIG = {
       if (m) out.films.push({ film: m[1].trim(), opening: m[2], week: +m[3], sessions: num(m[4]), adm: num(m[5]), comps: num(m[6]), nbo: num(m[7]) / 1000, gbo: num(m[8]) / 1000, occupancy: num(m[9]) / 100, atp: num(m[10]) });
       else if (/^Total\s/.test(t)) { const r = tail(t, 7); if (r) filmTotal = r.nums; }
     }
+    // ngày khởi chiếu: chuẩn về YYYY-MM-DD (file xuất kiểu VN ghi dd/mm, kiểu US ghi mm/dd)
+    out.films.forEach((f) => { const m2 = String(f.opening || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if (!m2) return; let a = +m2[1], b = +m2[2];
+      const dm = a > 12 ? true : b > 12 ? false : nn.locale === 'vi'; const d = dm ? a : b, mo = dm ? b : a; f.opening = `${m2[3]}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`; });
     if (filmTotal && out.films.length) {
       const s = out.films.reduce((a, f) => a + f.adm, 0);
       if (Math.abs(s - filmTotal[1]) > 0) out.warnings.push(`Tổng admit theo phim (${s}) lệch dòng Total (${filmTotal[1]})`);
@@ -389,8 +397,62 @@ window.FIREBASE_CONFIG = {
       if (Math.abs(d * 1000) > 2) { out.cls.push({ item_class: 'Khác (chênh lệch)', net: d, pct: d / (k.co_net / 1000), per_admit: k.adm ? (d * 1e6) / k.adm / 1000 : null }); out.adjust.push(`F&B theo class lệch ${(d * 1000).toLocaleString('en-US', { maximumFractionDigits: 0 })} nghìn đ, đưa vào dòng "Khác (chênh lệch)" để khớp Concession Sales Net`); } }
     return out;
   }
-  root.parseVista = parseVista; root._vistaLines = lines;
+  root.parseVista = parseVista; root._vistaLines = lines; root._vistaNorm = normNumbers;
   if (typeof module !== 'undefined') module.exports = { parseVista };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+// Vista "Concession Item Sales" (visItmSales.rpt): doanh thu, giá vốn, margin từng món theo item class. Tiền: nghìn VND như trong báo cáo.
+(function (root) {
+  const NUMRE = /^-?[\d.,]+$/;
+  const num = (s) => Number(String(s).replace(/,/g, ''));
+  function parseCS(pages0) {
+    const lines = root._vistaLines; const norm = root._vistaNorm;
+    const pages = norm ? norm(pages0).pages : pages0;
+    const all = []; pages.forEach((p) => { let body = false; lines(p).forEach((l) => { if (!body) { if (/^\(Incl\. Tax\)/.test(l.text.trim())) body = true; else if (/^(Cinema:|Concession Item Sales|From\b)/.test(l.text.trim())) all.push(l); return; } all.push(l); }); });
+    const out = { kind: 'cs', cinemaName: null, year: null, month: null, items: [], classes: {}, total: null, warnings: [] };
+    const tok = (l) => l.cells.flatMap((c) => String(c.t).trim().split(/\s+/)).filter(Boolean);
+    const head = all.find((l) => /Concession Item Sales/.test(l.text) && l.cells.length > 1);
+    if (head) out.cinemaName = head.cells[head.cells.length - 1].t.trim();
+    const cl = all.find((l) => /^Cinema:\s/.test(l.text)); if (cl) out.cinemaName = cl.text.replace(/^Cinema:\s*/, '').trim();
+    const fr = all.find((l) => /^From\b/.test(l.text)); const m = fr && fr.text.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (m) { out.month = +m[2]; out.year = +m[3]; }
+    let cls = null, expectClass = false, last = null;
+    for (const l of all) {
+      const t = l.text.trim(); if (!t) continue;
+      if (/^(Concession Item Sales|From\b|Stock Location|UOM\b|\(Incl\. Tax\)|D:\\|Cinema:)/.test(t) || /Vista Entertainment/.test(t)) continue;
+      if (/^Location:/.test(t)) { expectClass = true; continue; }
+      if (/^(Total for Location|GRAND TOTAL)/.test(t)) { const n = tok(l).filter((x) => NUMRE.test(x)); if (/GRAND/.test(t) && n.length >= 8) out.total = { qty: num(n[0]), net: num(n[2]), cost: num(n[6]), margin: num(n[7]) }; expectClass = false; continue; }
+      const T = tok(l);
+      // dòng món: mã | tên | ĐVT | SL | Discount | Net | Tax | Sales | Advance | Cost | Margin | % (9 số ở cuối, có thể kèm '%')
+      const nums = []; let j = T.length - 1; if (T[j] === '%') j--;
+      while (j >= 0 && NUMRE.test(T[j]) && nums.length < 9) nums.unshift(T[j--]);
+      if (nums.length === 9 && /^\d+$/.test(T[0]) && j >= 2) {
+        const name = T.slice(1, j).join(' '); const uom = T[j];
+        last = { code: T[0], item: name, uom, cls, qty: num(nums[0]), discount: num(nums[1]), net: num(nums[2]), cost: num(nums[6]), margin: num(nums[7]) };
+        out.items.push(last); expectClass = false; continue;
+      }
+      if (nums.length === 9 && j < 0) { // dòng tổng của class
+        if (cls) out.classes[cls] = { qty: num(nums[0]), net: num(nums[2]), cost: num(nums[6]), margin: num(nums[7]) };
+        expectClass = true; last = null; continue;
+      }
+      if (!nums.length) { // tên class hoặc phần tên món bị xuống dòng
+        if (expectClass || !last) { cls = t; expectClass = false; } else last.item += ' ' + t;
+      }
+    }
+    const sum = out.items.reduce((a, x) => a + x.net, 0);
+    if (out.total && Math.abs(sum - out.total.net) > 2) out.warnings.push(`Tổng Net theo món (${sum.toFixed(0)}) lệch GRAND TOTAL (${out.total.net.toFixed(0)})`);
+    if (!out.items.length) out.warnings.push('Không đọc được dòng món nào');
+    return out;
+  }
+  // Combo Sale theo mẫu Performance: tổng = CO Combo + CO Online
+  function comboGroup(name) {
+    if (/U22/i.test(name)) return 'u22';
+    if (/Extra/i.test(name)) return 'extra';
+    if (/^i?Combo [34]\b/i.test(name)) return 'group';
+    return 'standard';
+  }
+  root.parseCS = parseCS; root.comboGroup = comboGroup;
+  if (typeof module !== 'undefined') module.exports = { parseCS, comboGroup };
 })(typeof window !== 'undefined' ? window : globalThis);
 
 // Ops Business Plan parser. Input: {sheetName: rows[][]} (values). Output rows per cinema-year-month (million VND).
@@ -564,7 +626,7 @@ const CI = Object.fromEntries(CIN.map((c) => [c.code, c]));
 const CINV = () => (window.ACC ? CIN.filter((c) => window.ACC.cinemas.includes(c.code)) : CIN);
 const canSee = (code) => CINV().some((c) => c.code === code);
 const SECS = [['overall', 'Overall'], ['year', '12 tháng'], ['market', 'Market share'], ['film', 'Top film'], ['ticket', 'Ticket type'], ['coclass', 'CO sale by item class'], ['coitems', 'Top 10 CO items'], ['opex', 'OPEX']];
-const S = { cin: localStorage.getItem('plm_cin') || 'QT', year: 2026, months: null, up: { vista: {}, bp: {}, market: {}, hc: {}, plan: {} }, fb: null };
+const S = { cin: localStorage.getItem('plm_cin') || 'QT', year: 2026, months: null, up: { vista: {}, bp: {}, market: {}, hc: {}, plan: {}, cs: {} }, fb: null };
 const K = (c, y, m) => `${c}_${y}_${m}`;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 const fin = (v) => typeof v === 'number' && isFinite(v);
@@ -798,8 +860,20 @@ function marketView(c, P) {
 }
 
 /* ---------- vista aggregation ---------- */
-const filmOpen = (f) => { const m = String(f.opening || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); return m ? new Date(+m[3], +m[1] - 1, +m[2]) : null; };
+const filmOpen = (f) => { const s = String(f.opening || ''); let m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/); if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if (!m) return null; const a = +m[1], b = +m[2]; return a > 12 ? new Date(+m[3], b - 1, a) : new Date(+m[3], a - 1, b); };
+const fmtOpen = (f) => { const d = filmOpen(f); return d ? `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}` : f.opening || '–'; };
 const isNewFilm = (f, y, M) => { const d = filmOpen(f); return d ? d >= new Date(y, Math.min(...M) - 1, 1) : null; };
+// Concession Item Sales (nghìn VND)
+const csGet = (c, y, m) => (S.up.cs || {})[K(c, y, m)] || null;
+function csPeriod(c, y, M) {
+  const xs = M.map((m) => csGet(c, y, m)).filter(Boolean); if (!xs.length) return null;
+  const it = {}; xs.forEach((x) => x.items.forEach((r) => { const e = (it[r.item] = it[r.item] || { item: r.item, cls: r.cls, qty: 0, net: 0, cost: 0, margin: 0 }); e.qty += r.qty; e.net += r.net; e.cost += r.cost; e.margin += r.margin; }));
+  const items = Object.values(it).sort((a, b) => b.net - a.net);
+  const combo = { extra: 0, standard: 0, u22: 0, group: 0 }; items.filter((r) => /^CO (Combo|Online)$/.test(r.cls)).forEach((r) => (combo[comboGroup(r.item)] += r.net));
+  combo.total = combo.extra + combo.standard + combo.u22 + combo.group;
+  return { n: xs.length, months: M.filter((m) => csGet(c, y, m)), complete: xs.length === M.length, items, combo, net: xs.reduce((a, x) => a + (x.total ? x.total.net : x.items.reduce((s, r) => s + r.net, 0)), 0) };
+}
 function vistaPeriod(c, y, M) {
   const vs = M.map((m) => vGet(c, y, m)).filter(Boolean); if (!vs.length) return null;
   const films = {}; vs.forEach((v) => (v.films || []).forEach((f) => { const e = (films[f.film] = films[f.film] || { film: f.film, sessions: 0, adm: 0, nbo: 0, gbo: 0, occ: [], week: f.week, opening: f.opening }); e.sessions += f.sessions; e.adm += f.adm; e.nbo += f.nbo; e.gbo += f.gbo; e.occ.push(f.occupancy); e.week = Math.max(e.week, f.week); }));
@@ -961,79 +1035,136 @@ function market(P) {
   <div class="card tw" style="margin-top:12px">${bars}<div class="lg"><span><i style="background:var(--blue)"></i>Rạp đang xem</span><span><i style="background:var(--blue3)"></i>Galaxy khác</span><span><i style="background:#C9CCD1"></i>Đối thủ</span></div></div>`;
 }
 
-/* 04 Top film */
-function film(V, P) {
-  if (!V) return empty(`Chưa có PDF Vista cho ${plabel(P.y, P.M)}.`, ['up', 'Tải dữ liệu']);
-  const TA = V.films.reduce((a, f) => a + f.adm, 0), TN = V.films.reduce((a, f) => a + f.nbo, 0), TS = V.films.reduce((a, f) => a + f.sessions, 0), one = V.months.length === 1;
-  const L = vLy(P); const LA = L ? L.films.reduce((a, f) => a + f.adm, 0) : P.ly && P.ly.adm, LN = L ? L.films.reduce((a, f) => a + f.nbo, 0) : P.ly && P.ly.nbo, LS = L ? L.films.reduce((a, f) => a + f.sessions, 0) : null;
-  const nw = (v, y) => { const N = v.films.filter((f) => isNewFilm(f, y, P.M) === true); return { n: N.length, adm: N.reduce((s, f) => s + f.adm, 0) }; };
-  const cN = nw(V, P.y), lN = L ? nw(L, P.y - 1) : null;
-  const sm = [['Số lượng film', V.films.length, L ? L.films.length : null, f0], ['   Film mới khởi chiếu trong kỳ', cN.n, lN ? lN.n : null, f0], ['   Film chuyển tiếp từ kỳ trước', V.films.length - cN.n, L ? L.films.length - lN.n : null, f0],
-    ['   % admit từ film mới', cN.adm / TA, lN && LA ? lN.adm / LA : null, pc], ['Suất chiếu', TS, LS, f0], ['Admit', TA, LA, f0], ['Admit/suất', TA / TS, fin(LS) && LS ? LA / LS : null, f1], ['NBO', TN, LN, f1], ['ATP', (TN * 1000) / TA, fin(LA) && LA ? (LN * 1000) / LA : null, f1],
-    ['Top 3 phim / tổng admit', V.films.slice(0, 3).reduce((a, f) => a + f.adm, 0) / TA, L ? L.films.slice(0, 3).reduce((a, f) => a + f.adm, 0) / LA : null, pc]];
-  const t0 = `<div class="card tw"><table><thead><tr><th class="t">Tổng quan phim</th><th>Kỳ này</th><th>LY</th><th>vs LY</th></tr></thead><tbody>${sm.map(([l, a, b, f]) => `<tr><td class="t" style="white-space:pre">${l}</td><td>${f(a)}</td><td>${f(b)}</td><td class="${tone('num', f === pc ? null : ch(a, b))}">${f === pc ? (fin(b) ? dpt(a - b) : '–') : dp(ch(a, b))}</td></tr>`).join('')}</tbody></table></div>`;
-  const lm = L ? Object.fromEntries(L.films.map((f) => [f.film, f])) : {};
-  const rows = V.films.slice(0, 15).map((f, i) => `<tr><td>${i + 1}</td><td class="t">${esc(f.film)}</td><td>${f0(f.sessions)}</td><td>${pc(f.sessions / TS)}</td><td>${f0(f.adm)}</td><td>${pc(f.adm / TA)}</td><td>${fR(f.adm / f.sessions)}</td><td>${f1(f.nbo)}</td><td>${one ? pc(f.occ[0]) : '–'}</td><td>${fR((f.nbo * 1000) / f.adm)}</td><td class="${isNewFilm(f, P.y, P.M) ? 'good' : 'flat'}">${esc(f.opening || '–')}${isNewFilm(f, P.y, P.M) === true ? ' · mới' : isNewFilm(f, P.y, P.M) === false ? ' · chuyển tiếp' : ''}</td><td>${lm[f.film] ? f0(lm[f.film].adm) : '–'}</td></tr>`).join('');
-  const t1 = `<div class="card tw" style="margin-top:12px"><div class="ct">Top 15 phim</div><table><thead><tr><th>#</th><th class="t">Phim</th><th>Suất</th><th>% Suất</th><th>Admit</th><th>% Admit</th><th>Admit/suất</th><th>NBO</th><th>Lấp đầy</th><th>ATP</th><th>Khởi chiếu</th><th>Admit LY</th></tr></thead><tbody>${rows}</tbody></table></div>`;
-  return t0 + t1;
+/* ---- khung so sánh dùng chung: Tháng (Kỳ này | LM | LY) + YTD (năm nay | năm trước) ---- */
+function vPrev(P) { const ys = [...new Set(P.prevPairs.map((p) => p[0]))]; if (ys.length !== 1) return null; const v = vistaPeriod(P.c, ys[0], P.prevPairs.map((p) => p[1])); return v && v.complete ? v : null; }
+function csPrev(P) { const ys = [...new Set(P.prevPairs.map((p) => p[0]))]; if (ys.length !== 1) return null; const v = csPeriod(P.c, ys[0], P.prevPairs.map((p) => p[1])); return v && v.complete ? v : null; }
+// 5 bộ số: cur, lm, ly (đủ PDF cho kỳ), ytd, ytdLy (cộng các tháng có PDF)
+function vSets(P) { const c = P.c; const ly = vistaPeriod(c, P.y - 1, P.M);
+  return { cur: vistaPeriod(c, P.y, P.M), lm: vPrev(P), ly: ly && ly.complete ? ly : null, ytd: vistaPeriod(c, P.y, P.ytdM), ytdLy: vistaPeriod(c, P.y - 1, P.ytdM) }; }
+function csSets(P) { const c = P.c; const ly = csPeriod(c, P.y - 1, P.M);
+  return { cur: csPeriod(c, P.y, P.M), lm: csPrev(P), ly: ly && ly.complete ? ly : null, ytd: csPeriod(c, P.y, P.ytdM), ytdLy: csPeriod(c, P.y - 1, P.ytdM) }; }
+const ytdNote = (P, X, what) => { const n = P.ytdM.length, a = X.ytd ? X.ytd.n : 0, b = X.ytdLy ? X.ytdLy.n : 0; return a === n && b === n ? '' : `<div class="cs">YTD tính theo các tháng đã có ${what}: ${P.y} có ${a}/${n} tháng, ${P.y - 1} có ${b}/${n} tháng.</div>`; };
+const cmpHead = (P, first) => `<thead><tr class="gh"><th></th><th colspan="5">${plabel(P.y, P.M)}</th><th colspan="3" class="sep">YTD ${mlab(1)}–${mlab(Math.max(...P.M))}</th></tr>
+  <tr><th class="t">${first}</th><th>Kỳ này</th><th>Last Month</th><th>Last Year</th><th>% vs LM</th><th>% vs LY</th><th class="sep">${P.y}</th><th>${P.y - 1}</th><th>% vs LY</th></tr></thead>`;
+// rows: [{label, k:'num'|'money'|'ratio'|'pct'|'k1', v:[cur,lm,ly,ytd,ytdLy], cls}]
+function cmpRows(rows) {
+  const F = (k, v) => (!fin(v) ? '–' : k === 'pct' ? pc(v) : k === 'ratio' ? fR(v) : f0(v));
+  const kk = (k) => (k === 'pct' ? 'pct' : 'num');
+  return rows.map((x) => { if (x.sec) return `<tr class="grp b"><td colspan="9">${esc(x.sec)}</td></tr>`; const [a, b, c, d, e] = x.v;
+    return `<tr class="${x.cls || ''}"><td class="t">${esc(x.label)}${x.sub ? ` <span class="cs2">${x.sub}</span>` : ''}</td><td>${F(x.k, a)}</td><td>${F(x.k, b)}</td><td>${F(x.k, c)}</td>${dcell(kk(x.k), a, b)}${dcell(kk(x.k), a, c)}<td class="sep">${F(x.k, d)}</td><td>${F(x.k, e)}</td>${dcell(kk(x.k), d, e)}</tr>`; }).join('');
+}
+const cmpTable = (P, first, rows, note) => `<div class="card tw">${note || ''}<table class="cmp">${cmpHead(P, first)}<tbody>${cmpRows(rows)}</tbody></table></div>`;
+// bảng tỷ trọng: mỗi dòng = giá trị, kèm % trên tổng ở kỳ này và YTD
+function shareRows(labels, get, X, k = 'num') {
+  const keys = ['cur', 'lm', 'ly', 'ytd', 'ytdLy']; const tot = keys.map((s) => (X[s] ? labels.reduce((a, l) => a + (get(X[s], l) || 0), 0) : null));
+  const rows = labels.map((l) => { const v = keys.map((s) => (X[s] ? get(X[s], l) ?? 0 : null)); return { label: l, k, v, sub: tot[0] ? pc(v[0] / tot[0]) : '' }; });
+  rows.push({ label: 'Tổng', k, v: tot, cls: 'tot' }); return rows;
 }
 
-/* 05 Ticket type */
-function vPrev(P) { const ys = [...new Set(P.prevPairs.map((p) => p[0]))]; if (ys.length !== 1) return null; const v = vistaPeriod(P.c, ys[0], P.prevPairs.map((p) => p[1])); return v && v.complete ? v : null; }
+/* 04 Top film */
+function filmStats(v, y, M) {
+  if (!v || !v.films.length) return null; const F = v.films, TA = F.reduce((a, f) => a + f.adm, 0), TS = F.reduce((a, f) => a + f.sessions, 0);
+  const topA = (n) => F.slice(0, n).reduce((a, f) => a + f.adm, 0) / TA, topS = (n) => F.slice(0, n).reduce((a, f) => a + f.sessions, 0) / TS;
+  const nw = F.filter((f) => isNewFilm(f, y, M) === true).length;
+  return { n: F.length, nw, old: F.length - nw, ses: TS, adm: TA, aps: TA / TS, a1: topA(1), a3: topA(3), a5: topA(5), a10: topA(10), s1: topS(1), s3: topS(3), s5: topS(5), s10: topS(10) };
+}
+function film(V, P) {
+  const X = vSets(P); if (!X.cur || !X.cur.films.length) return empty(`Chưa có PDF Marketing Report cho ${plabel(P.y, P.M)}.`, ['up', 'Tải dữ liệu']);
+  const lmM = P.prevPairs.map((p) => p[1]), lmY = P.prevPairs.length ? P.prevPairs[0][0] : P.y;
+  const st = [filmStats(X.cur, P.y, P.M), filmStats(X.lm, lmY, lmM), filmStats(X.ly, P.y - 1, P.M), filmStats(X.ytd, P.y, P.ytdM), filmStats(X.ytdLy, P.y - 1, P.ytdM)];
+  const g = (k) => st.map((s) => (s ? s[k] : null));
+  const rows = [{ label: 'Số lượng film', k: 'num', v: g('n'), cls: 'b' }, { label: '   Film mới khởi chiếu', k: 'num', v: g('nw') }, { label: '   Film chuyển tiếp', k: 'num', v: g('old') },
+    { label: 'Suất chiếu', k: 'num', v: g('ses') }, { label: 'Admit', k: 'num', v: g('adm') }, { label: 'Admit / suất', k: 'ratio', v: g('aps') },
+    { sec: 'Tỷ trọng admit của nhóm phim đứng đầu' }, { label: 'Top 1', k: 'pct', v: g('a1') }, { label: 'Top 3', k: 'pct', v: g('a3') }, { label: 'Top 5', k: 'pct', v: g('a5') }, { label: 'Top 10', k: 'pct', v: g('a10'), cls: 'b' },
+    { sec: 'Tỷ trọng suất chiếu của nhóm phim đứng đầu' }, { label: 'Top 1', k: 'pct', v: g('s1') }, { label: 'Top 3', k: 'pct', v: g('s3') }, { label: 'Top 5', k: 'pct', v: g('s5') }, { label: 'Top 10', k: 'pct', v: g('s10'), cls: 'b' }];
+  const t0 = cmpTable(P, 'Mức tập trung', rows, ytdNote(P, X, 'PDF Marketing Report'));
+  const V0 = X.cur, TA = V0.films.reduce((a, f) => a + f.adm, 0), TS = V0.films.reduce((a, f) => a + f.sessions, 0), one = V0.months.length === 1;
+  const fl = V0.films.slice(0, 15).map((f, i) => { const nw = isNewFilm(f, P.y, P.M); return `<tr><td>${i + 1}</td><td class="t">${esc(f.film)}</td><td>${f0(f.sessions)}</td><td>${pc(f.sessions / TS)}</td><td>${f0(f.adm)}</td><td>${pc(f.adm / TA)}</td><td>${fR(f.adm / f.sessions)}</td><td>${f0(f.nbo)}</td><td>${one ? pc(f.occ[0]) : '–'}</td><td>${fR((f.nbo * 1000) / f.adm)}</td><td class="${nw ? 'good' : 'flat'}">${esc(fmtOpen(f))}${nw === true ? ' · mới' : nw === false ? ' · chuyển tiếp' : ''}</td></tr>`; }).join('');
+  return t0 + `<div class="card tw" style="margin-top:12px"><div class="ct">Top 15 phim ${plabel(P.y, P.M)}</div><table><thead><tr><th>#</th><th class="t">Phim</th><th>Suất</th><th>% Suất</th><th>Admit</th><th>% Admit</th><th>Admit/suất</th><th>NBO</th><th>Lấp đầy</th><th>ATP</th><th>Khởi chiếu</th></tr></thead><tbody>${fl}</tbody></table></div>`;
+}
+
+/* 05 Ticket type: tháng (kỳ này | LM | LY) + YTD */
 function ticket(V, P) {
-  const parts = []; const L = vLy(P); const ref = isApr26(P) ? SEED.ticket.filter((r) => r.cinema === P.c) : [];
-  const lyT = L ? Object.fromEntries(L.tickets.map((t) => [t.ticket_type, { adm: t.adm, net: t.net }])) : Object.fromEntries(ref.map((r) => [r.ticket_type, { adm: r.adm_ly, net: r.nbo_ly }]));
-  const hd = `<thead><tr><th class="t">Ticket type</th><th>Admit</th><th>% Admit</th><th>NBO</th><th>ATP</th><th>Admit LY</th><th>vs LY</th><th>ATP LY</th><th>vs ATP LY</th></tr></thead>`;
-  const ln = (name, adm, net, TA, l) => { const atp = adm ? (net * 1000) / adm : null, al = l && l.adm ? (l.net * 1000) / l.adm : null;
-    return `<td class="t">${esc(name)}</td><td>${f0(adm)}</td><td>${pc(adm / TA)}</td><td>${f1(net)}</td><td>${fR(atp)}</td><td>${l ? f0(l.adm) : '–'}</td><td class="${tone('num', l ? ch(adm, l.adm) : null)}">${l ? dp(ch(adm, l.adm)) : '–'}</td><td>${fR(al)}</td><td class="${tone('num', ch(atp, al))}">${dp(ch(atp, al))}</td>`; };
-  if (V && V.tickets.length) parts.push(`<div class="card tw"><div class="ct">Top ticket type</div><table>${hd}<tbody>${V.tickets.slice(0, 15).map((t) => `<tr>${ln(t.ticket_type, t.adm, t.net, V.adm, lyT[t.ticket_type])}</tr>`).join('')}</tbody></table></div>`);
-  else if (ref.length) { const tot = ref.find((r) => r.ticket_type === 'Grand Total');
-    parts.push(`<div class="card tw"><div class="ct">Top 10 ticket type</div><table>${hd}<tbody>${ref.filter((r) => r.ticket_type !== 'Grand Total').map((r) => `<tr>${ln(r.ticket_type, r.adm_tm, r.nbo_tm, tot.adm_tm, lyT[r.ticket_type])}</tr>`).join('')}<tr class="tot">${ln('Tổng', tot.adm_tm, tot.nbo_tm, tot.adm_tm, lyT['Grand Total'])}</tr></tbody></table></div>`); }
-  if (V) {
-    const cl = (x) => (x === 'POS' ? 'Quầy (POS)' : 'Online');
-    parts.push(`<div class="ct sub">Kênh bán vé</div>` + shareTable('Kênh', V.channel.map((x) => ({ label: cl(x.channel), v: x.adm })), L ? Object.fromEntries(L.channel.map((x) => [cl(x.channel), x.adm])) : null));
-    const lb = (v) => { const o = {}; v.lead.forEach((l) => { o[l.bucket] = o[l.bucket] || { order: l.order, adm: 0 }; o[l.bucket].adm += l.adm; }); return o; };
-    const cur = lb(V), ly = L ? lb(L) : null;
-    parts.push(`<div class="ct sub">Thời điểm mua vé so với giờ chiếu</div>` + shareTable('Thời điểm', Object.entries(cur).sort((a, b) => a[1].order - b[1].order).map(([k, x]) => ({ label: k, v: x.adm })), ly ? Object.fromEntries(Object.entries(ly).map(([k, x]) => [k, x.adm])) : null));
+  const X = vSets(P); const parts = [];
+  const ref = isApr26(P) ? SEED.ticket.filter((r) => r.cinema === P.c && r.ticket_type !== 'Grand Total') : [];
+  if (X.cur && X.cur.tickets.length) {
+    const labels = X.cur.tickets.slice(0, 15).map((t) => t.ticket_type);
+    const get = (v, l) => { const t = v.tickets.find((x) => x.ticket_type === l); if (t) return t.adm; const f = isApr26(P) && v === X.ly ? ref.find((x) => x.ticket_type === l) : null; return f ? f.adm_ly : null; };
+    const rows = shareRows(labels, get, X);
+    rows.forEach((r, i) => { if (i < labels.length) { const t = X.cur.tickets.find((x) => x.ticket_type === r.label); r.sub = `${r.sub} · ATP ${fR((t.net * 1000) / t.adm)}`; } });
+    parts.push(`<div class="ct sub">Top ticket type (admit)</div>` + cmpTable(P, 'Ticket type', rows, ytdNote(P, X, 'PDF Marketing Report')));
+  } else if (ref.length) {
+    const rows = ref.map((r) => ({ label: r.ticket_type, k: 'num', v: [r.adm_tm, r.adm_lm, r.adm_ly, null, null] }));
+    parts.push(`<div class="ct sub">Top 10 ticket type (admit)</div>` + cmpTable(P, 'Ticket type', rows));
+  }
+  if (X.cur) {
+    const ch = (v, l) => { const x = v.channel.find((q) => (q.channel === 'POS' ? 'Quầy (POS)' : 'Online') === l); return x ? x.adm : null; };
+    parts.push(`<div class="ct sub">Kênh bán vé (admit)</div>` + cmpTable(P, 'Kênh', shareRows(['Online', 'Quầy (POS)'], ch, X)));
+    const BKS = ['>4 ngày', '2–4 ngày', 'Hôm trước', 'Cùng ngày >2h', 'Cùng ngày 1–2h', 'Cùng ngày 15–60p', '15p cuối', 'Sau giờ chiếu'];
+    const ld = (v, l) => v.lead.filter((q) => q.bucket === l).reduce((a, q) => a + q.adm, 0);
+    parts.push(`<div class="ct sub">Thời điểm mua vé so với giờ chiếu (admit)</div>` + cmpTable(P, 'Thời điểm', shareRows(BKS, ld, X)));
     const GL = [['1 người', 'single'], ['2 người', 'two'], ['3 người', 'three'], ['4 người', 'four'], ['>4 người', 'more']];
-    parts.push(`<div class="ct sub">Quy mô nhóm khách (giao dịch)</div>` + shareTable('Nhóm', GL.map(([l, k]) => ({ label: l, v: V.group[k] })), L ? Object.fromEntries(GL.map(([l, k]) => [l, L.group[k]])) : null));
+    const gp = (v, l) => (v.group ? v.group[GL.find((x) => x[0] === l)[1]] : null);
+    parts.push(`<div class="ct sub">Quy mô nhóm khách (giao dịch)</div>` + cmpTable(P, 'Nhóm', shareRows(GL.map((x) => x[0]), gp, X)));
   }
   if (!parts.length) return empty(`Chưa có số ticket type cho ${plabel(P.y, P.M)}.`, ['up', 'Tải dữ liệu']);
   return parts.join('');
 }
 
-/* 06 CO class */
+/* 06 CO sale by item class + CO Combo Sale: bố cục mẫu Performance (nghìn VND) */
+const CLS_ROWS = ['CO Combo', 'CO Drinks', 'CO Food', 'CO Online', 'Khác', 'Cine Munch/Blv', 'Movie Combo'];
+function clsMap(v) { if (!v) return null; const base = ['CO Combo', 'CO Drinks', 'CO Food', 'CO Online', 'Movie Combo']; const o = {}; base.forEach((k) => (o[k] = (v.cls[k] ?? 0) * 1000));
+  let fb = 0, ot = 0; Object.entries(v.cls).forEach(([k, x]) => { if (base.includes(k)) return; if (/^F&B /.test(k)) fb += x; else ot += x; }); o['Cine Munch/Blv'] = fb * 1000; o['Khác'] = ot * 1000; return o; }
 function coclass(V, P) {
-  let rows = null, adm = P.cur.adm; const L = vLy(P);
+  const X = vSets(P); const AG = [P.cur, P.prev, P.ly, P.ytd, P.ytdLy].map((o) => (o && fin(o.adm) ? o.adm : null));
+  // Admission dùng để tính SPP/Offline phải cùng các tháng với số F&B: lấy Admits của chính các PDF
+  const A = ['cur', 'lm', 'ly', 'ytd', 'ytdLy'].map((s, i) => (X[s] ? X[s].adm : AG[i]));
+  if (X.ytd && !X.ytd.complete && !X.ytdLy) { const o = agg(P.c, P.y - 1, X.ytd.months); A[4] = o ? o.adm : null; } // YTD năm trước tính cùng các tháng
   const ref = isApr26(P) ? Object.fromEntries(SEED.coclass.filter((r) => r.cinema === P.c).map((r) => [r.item_class, r])) : {};
-  if (V) { const pv = vPrev(P); adm = V.adm;
-    rows = Object.entries(V.cls).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ k, tm: v, prev: pv ? pv.cls[k] ?? null : ref[k] ? ref[k].net_lm : null, ly: L ? L.cls[k] ?? null : ref[k] ? ref[k].net_ly : null })); }
-  else if (Object.keys(ref).length) rows = Object.values(ref).filter((r) => r.item_class !== 'Total' && (r.net_tm || r.net_lm)).sort((a, b) => b.net_tm - a.net_tm).map((r) => ({ k: r.item_class, tm: r.net_tm, prev: r.net_lm, ly: r.net_ly }));
-  if (!rows) return empty(`Chưa có số F&B theo item class cho ${plabel(P.y, P.M)}.`, ['up', 'Tải dữ liệu']);
-  const ladm = P.ly && P.ly.adm;
-  const T = rows.reduce((a, r) => a + (r.tm || 0), 0), TP = rows.reduce((a, r) => a + (r.prev || 0), 0), TL = rows.reduce((a, r) => a + (r.ly || 0), 0);
-  const sp = (v, a) => (fin(v) && a ? f2((v * 1000) / a) : '–');
-  const tb = rows.map((r) => `<tr><td class="t">${esc(r.k)}</td><td>${f1(r.tm)}</td><td>${pc(r.tm / T)}</td><td>${sp(r.tm, adm)}</td><td>${f1(r.prev)}</td><td class="${tone('money', ch(r.tm, r.prev))}">${dp(ch(r.tm, r.prev))}</td><td>${f1(r.ly)}</td><td>${sp(r.ly, ladm)}</td><td class="${tone('money', ch(r.tm, r.ly))}">${dp(ch(r.tm, r.ly))}</td></tr>`).join('')
-    + `<tr class="tot"><td>Tổng F&B</td><td>${f1(T)}</td><td>100.0%</td><td>${sp(T, adm)}</td><td>${TP ? f1(TP) : '–'}</td><td class="${tone('money', ch(T, TP || null))}">${dp(ch(T, TP || null))}</td><td>${TL ? f1(TL) : '–'}</td><td>${TL ? sp(TL, ladm) : '–'}</td><td class="${tone('money', ch(T, TL || null))}">${dp(ch(T, TL || null))}</td></tr>`;
-  const pay = '';
-  return `<div class="card tw"><table><thead><tr><th class="t">Item class</th><th>Net sale</th><th>% F&B</th><th>SPP</th><th>Kỳ trước</th><th>vs kỳ trước</th><th>LY</th><th>SPP LY</th><th>vs LY</th></tr></thead><tbody>${tb}</tbody></table></div>${pay}`;
+  const keys = ['cur', 'lm', 'ly', 'ytd', 'ytdLy'], refK = ['net_tm', 'net_lm', 'net_ly', 'net_ytd', 'net_ytd_ly'];
+  const C = keys.map((s, i) => { const m = clsMap(X[s]); if (m) return m; if (!Object.keys(ref).length) return null; const o = {}; CLS_ROWS.forEach((k) => (o[k] = ref[k] && fin(ref[k][refK[i]]) ? ref[k][refK[i]] * 1000 : null)); return o; });
+  if (!C[0]) return empty(`Chưa có số F&B theo item class cho ${plabel(P.y, P.M)}.`, ['up', 'Tải dữ liệu']);
+  const on = keys.map((s) => (X[s] ? (X[s].channel.find((q) => q.channel === 'Online') || {}).adm ?? null : null));
+  const off = A.map((a, i) => (fin(a) && fin(on[i]) ? a - on[i] : null));
+  const usedK = CLS_ROWS.filter((k) => C.some((o) => o && o[k]));
+  const tot = C.map((o) => (o ? usedK.reduce((a, k) => a + (o[k] || 0), 0) : null));
+  const spp = (net, i) => (fin(net) && A[i] ? net / A[i] : null);
+  const rows = [{ sec: 'Admission' }, { label: 'Admission', k: 'num', v: A, cls: 'b' }, { label: 'Online', k: 'num', v: on, sub: fin(on[0]) && A[0] ? pc(on[0] / A[0], 0) : '' }, { label: 'Offline', k: 'num', v: off, sub: fin(off[0]) && A[0] ? pc(off[0] / A[0], 0) : '' },
+    { sec: 'Net Sale (nghìn VND)' }, ...usedK.map((k) => ({ label: k, k: 'num', v: C.map((o) => (o ? o[k] : null)) })), { label: 'Total', k: 'num', v: tot, cls: 'tot' },
+    { sec: 'SPP (nghìn VND / admit)' }, ...usedK.map((k) => ({ label: k, k: 'ratio', v: C.map((o, i) => (o ? spp(o[k], i) : null)) })), { label: 'Total', k: 'ratio', v: tot.map((t, i) => spp(t, i)), cls: 'tot' }];
+  let h = `<div class="ct sub">CO Sale By Item Class</div>` + cmpTable(P, 'Item class', rows, ytdNote(P, X, 'PDF Marketing Report'));
+  // CO Combo Sale từ Concession Sales
+  const Y = csSets(P); const G = keys.map((s) => (Y[s] ? Y[s].combo : null));
+  const ys = [P.y, P.prevPairs.length ? P.prevPairs[0][0] : P.y, P.y - 1, P.y, P.y - 1];
+  const AC = keys.map((s, i) => { if (!Y[s]) return null; const o = agg(P.c, ys[i], Y[s].months); return o ? o.adm : null; });
+  if (G.some(Boolean)) { const GL = [['Extra Combo', 'extra'], ['Standard Combo', 'standard'], ['U22 Combo', 'u22'], ['Group Combo', 'group']];
+    const r2 = [{ label: 'Admission', k: 'num', v: AC, cls: 'b' }, { sec: 'Net Sale (nghìn VND)' }, ...GL.map(([l, k]) => ({ label: l, k: 'num', v: G.map((g) => (g ? g[k] : null)), sub: G[0] && G[0].total ? pc(G[0][k] / G[0].total, 0) : '' })), { label: 'Total', k: 'num', v: G.map((g) => (g ? g.total : null)), cls: 'tot' },
+      { sec: 'SPP (nghìn VND / admit)' }, ...GL.map(([l, k]) => ({ label: l, k: 'ratio', v: G.map((g, i) => (g && AC[i] ? g[k] / AC[i] : null)) })), { label: 'Total', k: 'ratio', v: G.map((g, i) => (g && AC[i] ? g.total / AC[i] : null)), cls: 'tot' }];
+    h += `<div class="ct sub">CO Combo Sale</div>` + cmpTable(P, 'Combo', r2, ytdNote(P, Y, 'PDF Concession Sales')); }
+  else h += `<div class="ct sub">CO Combo Sale</div><div class="card"><div class="cs">Chưa có PDF Concession Sales cho ${plabel(P.y, P.M)}. Tải file Concession Item Sales của Vista để tách Extra / Standard / U22 / Group combo.</div></div>`;
+  return h;
 }
 
-/* 07 Top 10 CO items (= Top 10 Combo Sales trong PDF Vista) */
+/* 07 Top 10 CO items: ưu tiên Concession Sales (có margin), chưa có thì dùng Marketing Report */
 function coitems(V, P) {
+  const Y = csSets(P);
+  if (Y.cur) { const T = Y.cur.net, adm = P.cur.adm; const lm = Y.lm ? Object.fromEntries(Y.lm.items.map((x) => [x.item, x])) : {}, ly = Y.ly ? Object.fromEntries(Y.ly.items.map((x) => [x.item, x])) : {};
+    const tb = (list, title) => `<div class="card tw" style="margin-top:12px"><div class="ct">${title}</div><table><thead><tr><th>#</th><th class="t">Item</th><th>Class</th><th>SL</th><th>Net</th><th>% NCO</th><th>SPP</th><th>Margin</th><th>% Margin</th><th>Net LM</th><th>Net LY</th><th>% vs LM</th><th>% vs LY</th></tr></thead><tbody>${list.map((x, i) => { const a = lm[x.item], b = ly[x.item];
+      return `<tr><td>${i + 1}</td><td class="t">${esc(x.item)}</td><td class="t">${esc(x.cls || '')}</td><td>${f0(x.qty)}</td><td>${f0(x.net)}</td><td>${pc(x.net / T)}</td><td>${fR(adm ? x.net / adm : null)}</td><td>${f0(x.margin)}</td><td>${pc(x.net ? x.margin / x.net : null)}</td><td>${a ? f0(a.net) : '–'}</td><td>${b ? f0(b.net) : '–'}</td>${dcell('num', x.net, a ? a.net : null)}${dcell('num', x.net, b ? b.net : null)}</tr>`; }).join('')}</tbody></table></div>`;
+    const combos = Y.cur.items.filter((x) => /^CO (Combo|Online)$/.test(x.cls)).slice(0, 10), top = Y.cur.items.slice(0, 10);
+    const s10 = combos.reduce((a, x) => a + x.net, 0);
+    return `<div class="cs">Nguồn: PDF Concession Sales · nghìn VND · Top 10 combo chiếm ${pc(s10 / T)} doanh thu F&B.</div>` + tb(combos, 'Top 10 combo') + tb(top, 'Top 10 món theo doanh thu');
+  }
   const L = vLy(P);
   if (V && V.combos.length) { const T = V.co_net; const lm = L ? Object.fromEntries(L.combos.map((t) => [t.item, t])) : {};
     const top = V.combos.slice(0, 10), s10 = top.reduce((a, x) => a + x.net, 0);
-    const rows = top.map((x, i) => { const l = lm[x.item]; return `<tr><td>${i + 1}</td><td class="t">${esc(x.item)}</td><td>${f0(x.qty)}</td><td>${f1(x.net)}</td><td>${pc(x.net / T)}</td><td>${f2((x.net * 1000) / V.adm)}</td><td>${l ? f0(l.qty) : '–'}</td><td>${l ? f1(l.net) : '–'}</td><td class="${tone('money', l ? ch(x.net, l.net) : null)}">${l ? dp(ch(x.net, l.net)) : '–'}</td></tr>`; }).join('');
-    const ls10 = L ? L.combos.slice(0, 10).reduce((a, x) => a + x.net, 0) : null;
-    const t1 = `<div class="card tw"><div class="ct">Top 10 combo · ${pc(s10 / T)} doanh thu F&B${L ? ` (LY ${pc(ls10 / L.co_net)})` : ''}</div><table><thead><tr><th>#</th><th class="t">Item</th><th>SL</th><th>Net</th><th>% NCO</th><th>SPP</th><th>SL LY</th><th>Net LY</th><th>vs LY</th></tr></thead><tbody>${rows}</tbody></table></div>`;
-    const il = L ? Object.fromEntries(L.items.map((x) => [x.item, x])) : {};
-    const mg = V.items.length ? `<div class="card tw" style="margin-top:12px"><div class="ct">Top 10 món theo doanh thu & margin</div><table><thead><tr><th class="t">Item</th><th>Net</th><th>Margin</th><th>% Margin</th><th>Net LY</th><th>vs LY</th><th>% Margin LY</th><th>± điểm</th></tr></thead><tbody>${V.items.map((x) => { const l = il[x.item]; const m = x.mOk ? x.margin / x.net : null, ml = l && l.mOk ? l.margin / l.net : null;
-      return `<tr><td class="t">${esc(x.item)}</td><td>${f1(x.net)}</td><td>${x.mOk ? f1(x.margin) : '–'}</td><td>${pc(m)}</td><td>${l ? f1(l.net) : '–'}</td><td class="${tone('money', l ? ch(x.net, l.net) : null)}">${l ? dp(ch(x.net, l.net)) : '–'}</td><td>${pc(ml)}</td><td class="${tone('num', fin(m) && fin(ml) ? m - ml : null)}">${fin(m) && fin(ml) ? dpt(m - ml) : '–'}</td></tr>`; }).join('')}</tbody></table></div>` : '';
+    const rows = top.map((x, i) => { const l = lm[x.item]; return `<tr><td>${i + 1}</td><td class="t">${esc(x.item)}</td><td>${f0(x.qty)}</td><td>${f0(x.net)}</td><td>${pc(x.net / T)}</td><td>${fR((x.net * 1000) / V.adm)}</td><td>${l ? f0(l.net) : '–'}</td>${dcell('num', x.net, l ? l.net : null)}</tr>`; }).join('');
+    const t1 = `<div class="cs">Nguồn: PDF Marketing Report · triệu VND. Tải PDF Concession Sales để có margin từng món.</div><div class="card tw"><div class="ct">Top 10 combo · ${pc(s10 / T)} doanh thu F&B</div><table><thead><tr><th>#</th><th class="t">Item</th><th>SL</th><th>Net</th><th>% NCO</th><th>SPP</th><th>Net LY</th><th>% vs LY</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    const mg = V.items.length ? `<div class="card tw" style="margin-top:12px"><div class="ct">Top 10 món theo doanh thu & margin</div><table><thead><tr><th class="t">Item</th><th>Net</th><th>Margin</th><th>% Margin</th></tr></thead><tbody>${V.items.map((x) => `<tr><td class="t">${esc(x.item)}</td><td>${f0(x.net)}</td><td>${x.mOk ? f0(x.margin) : '–'}</td><td>${pc(x.mOk ? x.margin / x.net : null)}</td></tr>`).join('')}</tbody></table></div>` : '';
     return t1 + mg; }
   const pi = isApr26(P) ? SEED.coitems.filter((r) => r.cinema === P.c) : [];
-  if (pi.length) { const rows = pi.map((x) => `<tr><td>${x.rank}</td><td class="t">${esc(x.item)}</td><td>${f1(x.net_tm)}</td><td>${f2(x.spp_tm)}</td><td>${f1(x.net_lm)}</td><td class="${tone('money', ch(x.net_tm, x.net_lm))}">${dp(ch(x.net_tm, x.net_lm))}</td><td>–</td><td>–</td></tr>`).join('');
-    return `<div class="card tw"><table><thead><tr><th>#</th><th class="t">Item</th><th>Net</th><th>SPP</th><th>Net LM</th><th>vs LM</th><th>Net LY</th><th>vs LY</th></tr></thead><tbody>${rows}</tbody></table></div>`; }
+  if (pi.length) { const rows = pi.map((x) => `<tr><td>${x.rank}</td><td class="t">${esc(x.item)}</td><td>${f0(x.net_tm)}</td><td>${fR(x.spp_tm)}</td><td>${f0(x.net_lm)}</td>${dcell('num', x.net_tm, x.net_lm)}</tr>`).join('');
+    return `<div class="card tw"><table><thead><tr><th>#</th><th class="t">Item</th><th>Net</th><th>SPP</th><th>Net LM</th><th>% vs LM</th></tr></thead><tbody>${rows}</tbody></table></div>`; }
   return empty(`Chưa có số top combo cho ${plabel(P.y, P.M)}.`, ['up', 'Tải dữ liệu']);
 }
 
@@ -1115,7 +1246,7 @@ function modal(html) { const m = document.createElement('div'); m.className = 'm
 
 /* ---------- local cache ---------- */
 function saveCache() { try { localStorage.setItem('plm_cache', JSON.stringify(S.up)); } catch (e) { console.warn(e); } }
-function loadCache() { try { const c = JSON.parse(localStorage.getItem('plm_cache') || 'null'); if (c) S.up = { vista: c.vista || {}, bp: c.bp || {}, market: c.market || {}, hc: c.hc || {}, plan: c.plan || {} }; } catch (e) {} }
+function loadCache() { try { const c = JSON.parse(localStorage.getItem('plm_cache') || 'null'); if (c) S.up = { vista: c.vista || {}, bp: c.bp || {}, market: c.market || {}, hc: c.hc || {}, plan: c.plan || {}, cs: c.cs || {} }; } catch (e) {} }
 
 /* ---------- Firebase ---------- */
 async function fbConnect() {
@@ -1126,7 +1257,7 @@ async function fbConnect() {
     try { await firebase.auth().signInAnonymously(); } catch (e) { console.warn('Anonymous auth chưa bật:', e.message); }
     const ref = firebase.database().ref(FB_ROOT); S.fb = ref;
     ref.on('value', (snap) => { const v = snap.val() || {}; S.fbErr = null;
-      S.up = { vista: v.vista || {}, bp: v.bp || {}, market: v.market || {}, hc: v.hc || {}, plan: v.plan || {} };
+      S.up = { vista: v.vista || {}, bp: v.bp || {}, market: v.market || {}, hc: v.hc || {}, plan: v.plan || {}, cs: v.cs || {} };
       // dữ liệu tải lên mà chưa ghi được lên Firebase: giữ lại, không để bản trên Firebase xóa mất, rồi ghi lại
       const pend = pendGet(); let n = 0; Object.entries(pend).forEach(([k, o]) => Object.entries(o).forEach(([key, val]) => { S.up[k][key] = val; n++; }));
       saveCache(); fillYears(); render(); setDot(n ? 'off' : 'ok', n ? `Còn ${n} mục chưa lên Firebase` : 'Đã đồng bộ Firebase');
@@ -1165,12 +1296,22 @@ async function readBook(file, maxCols) {
 // One button: detect each file (Vista PDF, Ops Business Plan, Programming Monthly Report), preview, then save together.
 async function uploadAny(files) {
   const m = modal(`<h3>Tải dữ liệu</h3><div id="upRes">Đang đọc ${files.length} file…</div><div class="mfoot"><button class="btn" data-close>Đóng</button><button class="btn pri" id="upSave" disabled>Lưu vào dữ liệu</button></div>`);
-  const res = []; const save = { vista: {}, bp: {}, market: {}, hc: {}, plan: {} };
+  const res = []; const save = { vista: {}, bp: {}, market: {}, hc: {}, plan: {}, cs: {} };
   for (const f of files) {
     const r = { file: f.name, type: '?', what: '', check: '', ok: false };
     try {
       if (/\.pdf$/i.test(f.name)) {
-        const v = parseVista(await pdfItems(f)); v.file = f.name; v.cinema = cinemaFromName(v.cinemaName); v.uploadedAt = new Date().toISOString();
+        const pg = await pdfItems(f);
+        if (pg.some((p) => p.items.some((it) => /Concession Item Sales/.test(it.str)))) { // Vista Concession Item Sales
+          const x = parseCS(pg); x.file = f.name; x.cinema = cinemaFromName(x.cinemaName); x.uploadedAt = new Date().toISOString(); r.type = 'PDF Concession Sales';
+          const g = {}; x.items.filter((it) => /^CO (Combo|Online)$/.test(it.cls)).forEach((it) => (g[comboGroup(it.item)] = (g[comboGroup(it.item)] || 0) + it.net));
+          r.what = `${x.cinema || x.cinemaName || '?'} · ${x.month ? mlab(x.month) + '/' + x.year : '?'} · ${x.items.length} món · Net ${f0(x.total ? x.total.net : null)} · Extra ${f0(g.extra)} · Standard ${f0(g.standard)} · U22 ${f0(g.u22)} · Group ${f0(g.group)}`;
+          if (!x.cinema) x.warnings.push('Không nhận ra rạp: ' + (x.cinemaName || '?'));
+          r.ok = !!(x.cinema && x.year && x.month && x.items.length); r.check = x.warnings.join('; ');
+          if (r.ok) { if (csGet(x.cinema, x.year, x.month)) r.note = 'Ghi đè bản cũ'; save.cs[K(x.cinema, x.year, x.month)] = x; }
+          res.push(r); continue;
+        }
+        const v = parseVista(pg); v.file = f.name; v.cinema = cinemaFromName(v.cinemaName); v.uploadedAt = new Date().toISOString();
         if (!v.cinema) v.warnings.push('Không nhận ra rạp: ' + (v.cinemaName || '?')); if (!v.films.length) v.warnings.push('Không đọc được bảng phim');
         r.type = 'PDF Vista'; const kk = v.kpi; r.what = `${v.cinema || v.cinemaName || '?'} · ${v.month ? mlab(v.month) + '/' + v.year : '?'} · Admits ${f0(kk.adm)} · BO Sales ${f0(kk.bo_sales)} · CO Net ${f0(kk.co_net)} · Strike ${fR(kk.adm_strike)}% · Avg/CO trans ${fR(kk.avg_co_trans)} · ${v.films.length} phim · ${v.tickets.length} ticket type · ${v.combos.length} combo`;
         r.ok = !!(v.cinema && v.year && v.month && v.kpi.adm); r.check = v.warnings.join('; '); r.note = (v.adjust || []).join('; ');
@@ -1203,10 +1344,10 @@ async function uploadAny(files) {
     res.push(r);
   }
   $('#upRes', m).innerHTML = `<div class="tw"><table><thead><tr><th class="t">File</th><th class="t">Loại</th><th class="t">Nội dung</th><th class="t">Kiểm tra</th></tr></thead><tbody>${res.map((r) => `<tr><td class="t">${esc(r.file)}</td><td class="t">${esc(r.type)}</td><td class="t">${esc(r.what)}</td><td class="t">${r.ok ? (r.check ? `<span class="bad">${esc(r.check)}</span>` : `<span class="ok">Khớp</span>${r.note ? ` <span class="flat">· ${r.note}</span>` : ''}`) : `<span class="bad">${esc(r.check || 'Không đọc được')}</span>`}</td></tr>`).join('')}</tbody></table></div>${S.fb ? '' : '<div class="msg warn">Chưa kết nối Firebase: dữ liệu chỉ lưu trên máy này.</div>'}`;
-  ['vista', 'bp', 'hc', 'plan'].forEach((k) => Object.keys(save[k]).forEach((key) => { if (!canSee(key.split('_')[0])) delete save[k][key]; })); // tài khoản rạp chỉ ghi số của rạp mình
+  ['vista', 'bp', 'hc', 'plan', 'cs'].forEach((k) => Object.keys(save[k]).forEach((key) => { if (!canSee(key.split('_')[0])) delete save[k][key]; })); // tài khoản rạp chỉ ghi số của rạp mình
   const b = $('#upSave', m); b.disabled = !res.some((r) => r.ok);
   b.onclick = async () => { b.disabled = true;
-    try { let allFb = true; for (const k of ['vista', 'bp', 'market', 'hc', 'plan']) if (Object.keys(save[k]).length) allFb = (await persist(k, save[k])) && allFb;
+    try { let allFb = true; for (const k of ['vista', 'bp', 'market', 'hc', 'plan', 'cs']) if (Object.keys(save[k]).length) allFb = (await persist(k, save[k])) && allFb;
       m.remove(); fillYears();
       toast(allFb ? 'Đã lưu ' + res.filter((r) => r.ok).length + ' file lên Firebase' : 'Đã lưu trên máy này, CHƯA lên Firebase' + (S.fbErr ? ': ' + S.fbErr : ' (chưa kết nối)') + '. App sẽ tự ghi lại khi kết nối được.', allFb ? 2500 : 8000);
       const v0 = Object.values(save.vista)[0]; if (v0 && canSee(v0.cinema)) { S.cin = v0.cinema; S.year = v0.year; S.months = [v0.month]; } render();
@@ -1218,15 +1359,15 @@ function allYears() {
   const ys = new Set([2024, 2025, 2026, S.year]);
   const add = (o) => Object.values(o || {}).forEach((r) => r && r.year && ys.add(+r.year));
   SEED.pl.forEach((r) => ys.add(r.year)); (SEED.hc || []).forEach((r) => ys.add(r.year)); (SEED.plan || []).forEach((r) => ys.add(r.year));
-  Object.keys(SEED.vista || {}).forEach((k) => ys.add(+k.split('_')[1])); ['bp', 'hc', 'plan', 'vista'].forEach((k) => add(S.up[k]));
+  Object.keys(SEED.vista || {}).forEach((k) => ys.add(+k.split('_')[1])); ['bp', 'hc', 'plan', 'vista', 'cs'].forEach((k) => add(S.up[k]));
   Object.keys(S.up.market || {}).forEach((k) => ys.add(+k.split('_')[0]));
   return [...ys].filter((y) => y > 2000).sort();
 }
 function fillYears() { const el = $('#yearSel'); if (!el) return; el.innerHTML = allYears().map((y) => `<option value="${y}">${y}</option>`).join(''); el.value = String(S.year); }
 function dataModal(y = S.year) {
-  const st = `<div class="tw"><table><thead><tr><th>Rạp</th>${Array.from({ length: 12 }, (_, k) => `<th>${mlab(k + 1)}</th>`).join('')}</tr></thead><tbody>${CINV().map((c) => `<tr><td>${c.code}</td>${Array.from({ length: 12 }, (_, k) => { const p = plGet(c.code, y, k + 1), pl = planGet(c.code, y, k + 1), v = vGet(c.code, y, k + 1), h = hcGet(c.code, y, k + 1); const mk = c.cluster && mkAll().some((r) => r.cluster === c.cluster && r.year === y && r.month === k + 1);
-    return `<td title="BP2026 Cinema ${pl ? '✓' : '✗'} · Ops Business Plan ${p ? '✓' : '✗'} · Lương & headcount ${h ? '✓' : '✗'} · PDF Vista ${v ? '✓' : '✗'} · Thị phần ${mk ? '✓' : '✗'}"><span class="${pl ? 'ok' : 'no'}">K</span><span class="${p ? 'ok' : 'no'}">B</span><span class="${h ? 'ok' : 'no'}">H</span><span class="${v ? 'ok' : 'no'}">P</span><span class="${mk ? 'ok' : 'no'}">M</span></td>`; }).join('')}</tr>`).join('')}</tbody></table></div>
-  <div class="lg"><span><b class="ok">K</b> BP2026 (kế hoạch)</span><span><b class="ok">B</b> Ops Business Plan</span><span><b class="ok">H</b> Lương & headcount</span><span><b class="ok">P</b> PDF Vista</span><span><b class="ok">M</b> Thị phần</span><span>${(() => { const n = Object.values(pendGet()).reduce((a, o) => a + Object.keys(o).length, 0); return S.fbErr ? '<b class="bad">Firebase lỗi: ' + esc(S.fbErr) + '</b>' : !S.fb ? 'Chưa kết nối Firebase' : n ? `<b class="bad">Còn ${n} mục chưa lên Firebase</b>` : 'Đã đồng bộ Firebase'; })()}</span></div>`;
+  const st = `<div class="tw"><table><thead><tr><th>Rạp</th>${Array.from({ length: 12 }, (_, k) => `<th>${mlab(k + 1)}</th>`).join('')}</tr></thead><tbody>${CINV().map((c) => `<tr><td>${c.code}</td>${Array.from({ length: 12 }, (_, k) => { const p = plGet(c.code, y, k + 1), pl = planGet(c.code, y, k + 1), v = vGet(c.code, y, k + 1), cz = csGet(c.code, y, k + 1), h = hcGet(c.code, y, k + 1); const mk = c.cluster && mkAll().some((r) => r.cluster === c.cluster && r.year === y && r.month === k + 1);
+    return `<td title="BP2026 Cinema ${pl ? '✓' : '✗'} · Ops Business Plan ${p ? '✓' : '✗'} · Lương & headcount ${h ? '✓' : '✗'} · PDF Vista ${v ? '✓' : '✗'} · Thị phần ${mk ? '✓' : '✗'}"><span class="${pl ? 'ok' : 'no'}">K</span><span class="${p ? 'ok' : 'no'}">B</span><span class="${h ? 'ok' : 'no'}">H</span><span class="${v ? 'ok' : 'no'}">P</span><span class="${cz ? 'ok' : 'no'}">C</span><span class="${mk ? 'ok' : 'no'}">M</span></td>`; }).join('')}</tr>`).join('')}</tbody></table></div>
+  <div class="lg"><span><b class="ok">K</b> BP2026 (kế hoạch)</span><span><b class="ok">B</b> Ops Business Plan</span><span><b class="ok">H</b> Lương & headcount</span><span><b class="ok">P</b> PDF Marketing Report</span><span><b class="ok">C</b> PDF Concession Sales</span><span><b class="ok">M</b> Thị phần</span><span>${(() => { const n = Object.values(pendGet()).reduce((a, o) => a + Object.keys(o).length, 0); return S.fbErr ? '<b class="bad">Firebase lỗi: ' + esc(S.fbErr) + '</b>' : !S.fb ? 'Chưa kết nối Firebase' : n ? `<b class="bad">Còn ${n} mục chưa lên Firebase</b>` : 'Đã đồng bộ Firebase'; })()}</span></div>`;
   const m = modal(`<div class="mhead"><h3>Trạng thái dữ liệu</h3><label class="ysel2">Năm <select id="dsYear">${allYears().map((x) => `<option value="${x}"${x === y ? ' selected' : ''}>${x}</option>`).join('')}</select></label></div>${st}<div class="mfoot"><button class="btn" data-close>Đóng</button></div>`);
   const ds = document.getElementById('dsYear'); if (ds) ds.onchange = () => { (m && m.remove ? m : document.querySelector('.modal')).remove(); dataModal(+ds.value); };
 }
@@ -1393,7 +1534,7 @@ function fillCinema(sh, ci, P, S0) {
     put('B' + r, t[0] || null); put('C' + r, num(t[1])); put('D' + r, num(t[2])); put('F' + r, num(t[3])); put('G' + r, num(t[4])); put('I' + r, num(t[5])); put('J' + r, num(t[6])); }
   // ---- 3. CO sale by item class (nghìn VND, như mẫu) ----
   const online = (v) => (v ? (v.channel.find((x) => x.channel === 'Online') || {}).adm ?? null : null);
-  const YT = (() => { const v = vistaPeriod(c, y, P.ytdM); return v && v.complete ? v : null; })(), YL = (() => { const v = vistaPeriod(c, y - 1, P.ytdM); return v && v.complete ? v : null; })();
+  const YT = vistaPeriod(c, y, P.ytdM), YL = vistaPeriod(c, y - 1, P.ytdM); // YTD = cộng các tháng đã có PDF
   put('C60', online(Vc)); put('D60', online(VP)); put('E60', online(VL)); put('L60', online(YT)); put('M60', online(YL));
   const CL = [[64, 'CO Combo'], [65, 'CO Drinks'], [66, 'CO Food'], [67, 'CO Online'], [68, 'Khác'], [69, 'Cine Munch/Blv'], [70, 'Movie Combo']];
   const BASE = ['CO Combo', 'CO Drinks', 'CO Food', 'CO Online', 'Movie Combo'];
@@ -1407,7 +1548,14 @@ function fillCinema(sh, ci, P, S0) {
   put('B68', [cC, cP, cL, cY, cYL].some((o) => o && fin(o['Khác'])) ? 'Khác' : null);
   CL.forEach(([r, k]) => { const f = cr[k] || {};
     put('C' + r, k1(cC ? cC[k] : f.net_tm)); put('D' + r, k1(cP ? cP[k] : f.net_lm)); put('E' + r, k1(cL ? cL[k] : f.net_ly)); put('L' + r, k1(cY ? cY[k] : f.net_ytd)); put('M' + r, k1(cYL ? cYL[k] : f.net_ytd_ly)); });
-  [93, 95, 96].forEach((r) => ['C', 'D', 'E', 'L', 'M'].forEach((L) => put(L + r, null))); // chưa có nguồn tách Extra/U22/Group combo
+  // CO Combo Sale từ PDF Concession Sales (nghìn VND); Standard Combo giữ công thức của mẫu
+  const Y = csSets(P); const CG = [['C', Y.cur], ['D', Y.lm], ['E', Y.ly], ['L', Y.ytd], ['M', Y.ytdLy]];
+  CG.forEach(([L, o]) => { put(L + '93', o ? o.combo.extra : null); put(L + '95', o ? o.combo.u22 : null); put(L + '96', o ? o.combo.group : null);
+    if (o) put(L + '94', o.combo.standard); }); // có Concession Sales thì Standard lấy đúng số của file (cùng tháng với 3 nhóm còn lại)
+  // YTD: khi chưa đủ PDF, Admission dùng cho Online/Offline/SPP là Admits của các tháng đã có PDF
+  if (YT && !YT.complete) { put('L59', YT.adm); if (!YL) { const o = agg(c, y - 1, YT.months); put('M59', o ? o.adm : null); } }
+  if (YL && !YL.complete) put('M59', YL.adm);
+  if (Y.ytd && !Y.ytd.complete) { const o = agg(c, y, Y.ytd.months), o2 = agg(c, y - 1, (Y.ytdLy || Y.ytd).months); put('L90', o ? o.adm : null); put('M90', o2 ? o2.adm : null); }
   // ---- 4. OPEX ----
   const sd = SEED.std[c] || {}, nY = P.ytdM.length;
   const neg = (v) => (fin(v) ? -Math.abs(v) : null);
@@ -1441,22 +1589,34 @@ function extras(sh, ci, P, V, VL, S0) {
     mk.rows.forEach((x) => row([x.exhibitor, x.adm, F(`=IFERROR(C${r}/SUM($C$${r0}:$C$${r1}),"-")`), mk.lyOk ? x.adm_ly ?? 0 : null, F(`=IFERROR(E${r}/SUM($E$${r0}:$E$${r1}),"-")`), F(`=IFERROR(D${r}-F${r},"-")`)], ['int', 'pct', 'int', 'pct', 'pct'], x.me)); }
   else row(['Chưa có số thị phần cho kỳ này'], []);
   r++; NT.market.forEach((f) => noteRow(f)); r += 2;
-  // Top film
-  sec('Top film');
-  if (V && V.films.length) { head(['Phim', 'Suất', 'Admit', '% Admit', 'Admit/suất', 'NBO', 'ATP', 'Khởi chiếu', 'Loại', 'Admit LY']); const L = VL ? Object.fromEntries(VL.films.map((f) => [f.film, f.adm])) : {}; const r0 = r, list = V.films.slice(0, 15), r1 = r + list.length - 1;
-    list.forEach((f) => { const nw = isNewFilm(f, P.y, P.M); row([f.film, f.sessions, f.adm, F(`=IFERROR(D${r}/SUM($D$${r0}:$D$${r1}),"-")`), F(`=IFERROR(D${r}/C${r},"-")`), f.nbo, F(`=IFERROR(G${r}/D${r}*10^3,"-")`), f.opening || '', nw === true ? 'Mới' : nw === false ? 'Chuyển tiếp' : '', L[f.film] ?? null], ['int', 'int', 'pct', 'dec1', 'int', 'dec1', 'int', 'int', 'int']); });
-    const nN = V.films.filter((f) => isNewFilm(f, P.y, P.M) === true);
-    row(['Số lượng film', V.films.length], ['int'], true); row(['Film mới khởi chiếu trong kỳ', nN.length], ['int']); row(['Film chuyển tiếp từ kỳ trước', V.films.length - nN.length], ['int']);
-    row(['% admit từ film mới', nN.reduce((a, f) => a + f.adm, 0) / V.films.reduce((a, f) => a + f.adm, 0)], ['pct']); }
-  else row(['Chưa có PDF Vista cho kỳ này'], []);
+  // Top film: mức tập trung tháng + YTD
+  sec('Top film - mức tập trung');
+  { const X = vSets(P), lmM = P.prevPairs.map((p) => p[1]), lmY = P.prevPairs.length ? P.prevPairs[0][0] : P.y;
+    const st = [filmStats(X.cur, P.y, P.M), filmStats(X.lm, lmY, lmM), filmStats(X.ly, P.y - 1, P.M), filmStats(X.ytd, P.y, P.ytdM), filmStats(X.ytdLy, P.y - 1, P.ytdM)];
+    if (st[0]) { head(['Chỉ tiêu', 'Kỳ này', 'Last Month', 'Last Year', '% vs LM', '% vs LY', `YTD ${P.y}`, `YTD ${P.y - 1}`, '% vs LY']);
+      const R = [['Số lượng film', 'n', 'int'], ['Film mới khởi chiếu', 'nw', 'int'], ['Film chuyển tiếp', 'old', 'int'], ['Suất chiếu', 'ses', 'int'], ['Admit', 'adm', 'int'], ['Admit / suất', 'aps', 'dec1'],
+        ['Top 1 - % admit', 'a1', 'pct'], ['Top 3 - % admit', 'a3', 'pct'], ['Top 5 - % admit', 'a5', 'pct'], ['Top 10 - % admit', 'a10', 'pct'], ['Top 1 - % suất', 's1', 'pct'], ['Top 3 - % suất', 's3', 'pct'], ['Top 5 - % suất', 's5', 'pct'], ['Top 10 - % suất', 's10', 'pct']];
+      R.forEach(([l, k, f]) => { const v = st.map((s) => (s ? s[k] : null)); const d = (a, b) => (f === 'pct' ? F(`=IF(OR(${a}${r}="",${b}${r}=""),"-",${a}${r}-${b}${r})`) : F(`=IFERROR(${a}${r}/${b}${r}-1,"-")`));
+        row([l, v[0], v[1], v[2], d('C', 'D'), d('C', 'E'), v[3], v[4], d('H', 'I')], [f, f, f, 'pct', 'pct', f, f, 'pct']); });
+      const n = P.ytdM.length; if ((X.ytd ? X.ytd.n : 0) < n || (X.ytdLy ? X.ytdLy.n : 0) < n) row([`YTD theo các tháng có PDF: ${P.y} có ${X.ytd ? X.ytd.n : 0}/${n}, ${P.y - 1} có ${X.ytdLy ? X.ytdLy.n : 0}/${n} tháng`], []);
+      r++; head(['Phim', 'Suất', 'Admit', '% Admit', 'Admit/suất', 'NBO', 'ATP', 'Khởi chiếu', 'Loại']); const r0 = r, list = X.cur.films.slice(0, 15), r1 = r + list.length - 1;
+      list.forEach((f) => { const nw = isNewFilm(f, P.y, P.M); row([f.film, f.sessions, f.adm, F(`=IFERROR(D${r}/SUM($D$${r0}:$D$${r1}),"-")`), F(`=IFERROR(D${r}/C${r},"-")`), f.nbo, F(`=IFERROR(G${r}/D${r}*10^3,"-")`), fmtOpen(f), nw === true ? 'Mới' : nw === false ? 'Chuyển tiếp' : ''], ['int', 'int', 'pct', 'dec1', 'int', 'dec1', 'int', 'int']); }); }
+    else row(['Chưa có PDF Marketing Report cho kỳ này'], []); }
   r++; NT.film.forEach((f) => noteRow(f)); r += 2;
-  // Top 10 CO items
+  // Top 10 CO items: ưu tiên PDF Concession Sales (nghìn VND, có margin)
+  const YC = csSets(P);
+  if (YC.cur) { const T = YC.cur.net, adm = P.cur.adm; const lm = YC.lm ? Object.fromEntries(YC.lm.items.map((q) => [q.item, q])) : {}, lyx = YC.ly ? Object.fromEntries(YC.ly.items.map((q) => [q.item, q])) : {};
+    const tbl = (title, list) => { sec(title + ' (nghìn VND)'); head(['Item', 'Class', 'SL', 'Net', '% NCO', 'SPP', 'Margin', '% Margin', 'Net LM', 'Net LY', '% vs LM', '% vs LY']);
+      list.forEach((q) => { const a = lm[q.item], b = lyx[q.item]; row([q.item, q.cls || '', q.qty, q.net, F(`=IFERROR(E${r}/${T},"-")`), F(`=IFERROR(E${r}/${adm},"-")`), q.margin, F(`=IFERROR(H${r}/E${r},"-")`), a ? a.net : null, b ? b.net : null, F(`=IFERROR(E${r}/J${r}-1,"-")`), F(`=IFERROR(E${r}/K${r}-1,"-")`)], ['int', 'int', 'int', 'pct', 'dec1', 'int', 'pct', 'int', 'int', 'pct', 'pct']); }); r++; };
+    tbl('Top 10 combo', YC.cur.items.filter((q) => /^CO (Combo|Online)$/.test(q.cls)).slice(0, 10)); tbl('Top 10 món theo doanh thu', YC.cur.items.slice(0, 10)); }
+  else {
   sec('Top 10 CO items');
   if (V && V.combos.length) { head(['Item', 'SL', 'Net', '% NCO', 'SPP', 'SL LY', 'Net LY', 'vs LY']); const L = VL ? Object.fromEntries(VL.combos.map((q) => [q.item, q])) : {}; const r0 = r;
     V.combos.slice(0, 10).forEach((x) => { const l = L[x.item]; row([x.item, x.qty, x.net, F(`=IFERROR(D${r}/${V.co_net},"-")`), F(`=IFERROR(D${r}*1000/${V.adm},"-")`), l ? l.qty : null, l ? l.net : null, F(`=IFERROR(D${r}/H${r}-1,"-")`)], ['int', 'int', 'pct', 'dec2', 'int', 'int', 'pct']); });
     row(['Tổng top 10', F(`=SUM(C${r0}:C${r - 1})`), F(`=SUM(D${r0}:D${r - 1})`), F(`=IFERROR(D${r}/${V.co_net},"-")`), F(`=IFERROR(D${r}*1000/${V.adm},"-")`), null, F(`=IF(COUNT(H${r0}:H${r - 1})=0,"",SUM(H${r0}:H${r - 1}))`), F(`=IFERROR(D${r}/H${r}-1,"-")`)], ['int', 'int', 'pct', 'dec2', 'int', 'int', 'pct'], true);
     if (V.items.length) { r++; head(['Top 10 món theo doanh thu', 'Net', 'Margin', '% Margin']); V.items.forEach((x) => row([x.item, x.net, x.mOk ? x.margin : null, F(`=IFERROR(D${r}/C${r},"-")`)], ['int', 'int', 'pct'])); } }
   else row(['Chưa có số top combo cho kỳ này'], []);
+  }
   r++; NT.coitems.forEach((f) => noteRow(f)); r += 2;
   // Chi phí theo tháng
   sec(`Chi phí theo tháng ${P.y} (triệu VND)`);
