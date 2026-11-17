@@ -978,7 +978,6 @@ function yearView(P) {
   const isCost = COSTK.has(kind); const good = (d) => (isCost ? d <= 0 : d >= 0);
   if (!gapL && fin(yv) && fin(yl)) { const d = delta(kind, yv, yl); add(good(d) ? 'good' : 'bad', `${lab} ${ytdL}: ${A(yv)}, ${dfmt(kind, d)} so với cùng kỳ.`); }
   else if (!hasL) add('flat', PGK.has(k) ? `Năm ${P.y - 1} chưa có file lương & headcount nên chưa so cùng kỳ payroll.` : `Chưa có số ${lab} năm ${P.y - 1} để so cùng kỳ.`);
-  if (P.ytdLy && P.ytdLy.partial > 0) add('flat', `${ytdL} năm ${P.y - 1} chỉ có số ${P.ytdM.length - P.ytdLy.partial}/${P.ytdM.length} tháng (${(P.ytdLy.miss.adm || []).map(mlab).join(', ')} không có số), so cùng kỳ lũy kế theo các tháng có số.`);
   if (!gap && fin(yv) && fin(yb)) { const d = delta(kind, yv, yb); add(good(d) ? 'good' : 'bad', `${ytdL} ${dfmt(kind, d)} so với BP (${A(yb)}).`); }
   const pts = a.map((v, i) => [i + 1, v]).filter(([, v]) => fin(v));
   if (pts.length >= 2 && !['hc_total', 'hours_staff'].includes(k)) { const s2 = pts.slice().sort((x, y) => absK(kind, y[1]) - absK(kind, x[1])); const hi = s2[0], lo = s2[s2.length - 1];
@@ -1043,7 +1042,7 @@ function vSets(P) { const c = P.c; const ly = vistaPeriod(c, P.y - 1, P.M);
   return { cur: vistaPeriod(c, P.y, P.M), lm: vPrev(P), ly: ly && ly.complete ? ly : null, ytd: vistaPeriod(c, P.y, P.ytdM), ytdLy: vistaPeriod(c, P.y - 1, P.ytdM) }; }
 function csSets(P) { const c = P.c; const ly = csPeriod(c, P.y - 1, P.M);
   return { cur: csPeriod(c, P.y, P.M), lm: csPrev(P), ly: ly && ly.complete ? ly : null, ytd: csPeriod(c, P.y, P.ytdM), ytdLy: csPeriod(c, P.y - 1, P.ytdM) }; }
-const ytdNote = (P, X, what) => { const n = P.ytdM.length, a = X.ytd ? X.ytd.n : 0, b = X.ytdLy ? X.ytdLy.n : 0; return a === n && b === n ? '' : `<div class="cs">YTD tính theo các tháng đã có ${what}: ${P.y} có ${a}/${n} tháng, ${P.y - 1} có ${b}/${n} tháng.</div>`; };
+const ytdNote = () => ''; // YTD cộng các tháng đã có dữ liệu – không cần chú thích
 const cmpHead = (P, first) => `<thead><tr class="gh"><th></th><th colspan="5">${plabel(P.y, P.M)}</th><th colspan="3" class="sep">YTD ${mlab(1)}–${mlab(Math.max(...P.M))}</th></tr>
   <tr><th class="t">${first}</th><th>Kỳ này</th><th>Last Month</th><th>Last Year</th><th>% vs LM</th><th>% vs LY</th><th class="sep">${P.y}</th><th>${P.y - 1}</th><th>% vs LY</th></tr></thead>`;
 // rows: [{label, k:'num'|'money'|'ratio'|'pct'|'k1', v:[cur,lm,ly,ytd,ytdLy], cls}]
@@ -1153,13 +1152,13 @@ function coitems(V, P) {
       return `<tr><td>${i + 1}</td><td class="t">${esc(x.item)}</td><td class="t">${esc(x.cls || '')}</td><td>${f0(x.qty)}</td><td>${f0(x.net)}</td><td>${pc(x.net / T)}</td><td>${fR(adm ? x.net / adm : null)}</td><td>${f0(x.margin)}</td><td>${pc(x.net ? x.margin / x.net : null)}</td><td>${a ? f0(a.net) : '–'}</td><td>${b ? f0(b.net) : '–'}</td>${dcell('num', x.net, a ? a.net : null)}${dcell('num', x.net, b ? b.net : null)}</tr>`; }).join('')}</tbody></table></div>`;
     const combos = Y.cur.items.filter((x) => /^CO (Combo|Online)$/.test(x.cls)).slice(0, 10), top = Y.cur.items.slice(0, 10);
     const s10 = combos.reduce((a, x) => a + x.net, 0);
-    return `<div class="cs">Nguồn: PDF Concession Sales · nghìn VND · Top 10 combo chiếm ${pc(s10 / T)} doanh thu F&B.</div>` + tb(combos, 'Top 10 combo') + tb(top, 'Top 10 món theo doanh thu');
+    return tb(combos, `Top 10 combo · ${pc(s10 / T)} doanh thu F&B`) + tb(top, 'Top 10 món theo doanh thu');
   }
   const L = vLy(P);
   if (V && V.combos.length) { const T = V.co_net; const lm = L ? Object.fromEntries(L.combos.map((t) => [t.item, t])) : {};
     const top = V.combos.slice(0, 10), s10 = top.reduce((a, x) => a + x.net, 0);
     const rows = top.map((x, i) => { const l = lm[x.item]; return `<tr><td>${i + 1}</td><td class="t">${esc(x.item)}</td><td>${f0(x.qty)}</td><td>${f0(x.net)}</td><td>${pc(x.net / T)}</td><td>${fR((x.net * 1000) / V.adm)}</td><td>${l ? f0(l.net) : '–'}</td>${dcell('num', x.net, l ? l.net : null)}</tr>`; }).join('');
-    const t1 = `<div class="cs">Nguồn: PDF Marketing Report · triệu VND. Tải PDF Concession Sales để có margin từng món.</div><div class="card tw"><div class="ct">Top 10 combo · ${pc(s10 / T)} doanh thu F&B</div><table><thead><tr><th>#</th><th class="t">Item</th><th>SL</th><th>Net</th><th>% NCO</th><th>SPP</th><th>Net LY</th><th>% vs LY</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    const t1 = `<div class="card tw"><div class="ct">Top 10 combo · ${pc(s10 / T)} doanh thu F&B</div><table><thead><tr><th>#</th><th class="t">Item</th><th>SL</th><th>Net</th><th>% NCO</th><th>SPP</th><th>Net LY</th><th>% vs LY</th></tr></thead><tbody>${rows}</tbody></table></div>`;
     const mg = V.items.length ? `<div class="card tw" style="margin-top:12px"><div class="ct">Top 10 món theo doanh thu & margin</div><table><thead><tr><th class="t">Item</th><th>Net</th><th>Margin</th><th>% Margin</th></tr></thead><tbody>${V.items.map((x) => `<tr><td class="t">${esc(x.item)}</td><td>${f0(x.net)}</td><td>${x.mOk ? f0(x.margin) : '–'}</td><td>${pc(x.mOk ? x.margin / x.net : null)}</td></tr>`).join('')}</tbody></table></div>` : '';
     return t1 + mg; }
   const pi = isApr26(P) ? SEED.coitems.filter((r) => r.cinema === P.c) : [];
@@ -1598,7 +1597,6 @@ function extras(sh, ci, P, V, VL, S0) {
         ['Top 1 - % admit', 'a1', 'pct'], ['Top 3 - % admit', 'a3', 'pct'], ['Top 5 - % admit', 'a5', 'pct'], ['Top 10 - % admit', 'a10', 'pct'], ['Top 1 - % suất', 's1', 'pct'], ['Top 3 - % suất', 's3', 'pct'], ['Top 5 - % suất', 's5', 'pct'], ['Top 10 - % suất', 's10', 'pct']];
       R.forEach(([l, k, f]) => { const v = st.map((s) => (s ? s[k] : null)); const d = (a, b) => (f === 'pct' ? F(`=IF(OR(${a}${r}="",${b}${r}=""),"-",${a}${r}-${b}${r})`) : F(`=IFERROR(${a}${r}/${b}${r}-1,"-")`));
         row([l, v[0], v[1], v[2], d('C', 'D'), d('C', 'E'), v[3], v[4], d('H', 'I')], [f, f, f, 'pct', 'pct', f, f, 'pct']); });
-      const n = P.ytdM.length; if ((X.ytd ? X.ytd.n : 0) < n || (X.ytdLy ? X.ytdLy.n : 0) < n) row([`YTD theo các tháng có PDF: ${P.y} có ${X.ytd ? X.ytd.n : 0}/${n}, ${P.y - 1} có ${X.ytdLy ? X.ytdLy.n : 0}/${n} tháng`], []);
       r++; head(['Phim', 'Suất', 'Admit', '% Admit', 'Admit/suất', 'NBO', 'ATP', 'Khởi chiếu', 'Loại']); const r0 = r, list = X.cur.films.slice(0, 15), r1 = r + list.length - 1;
       list.forEach((f) => { const nw = isNewFilm(f, P.y, P.M); row([f.film, f.sessions, f.adm, F(`=IFERROR(D${r}/SUM($D$${r0}:$D$${r1}),"-")`), F(`=IFERROR(D${r}/C${r},"-")`), f.nbo, F(`=IFERROR(G${r}/D${r}*10^3,"-")`), fmtOpen(f), nw === true ? 'Mới' : nw === false ? 'Chuyển tiếp' : ''], ['int', 'int', 'pct', 'dec1', 'int', 'dec1', 'int', 'int']); }); }
     else row(['Chưa có PDF Marketing Report cho kỳ này'], []); }
