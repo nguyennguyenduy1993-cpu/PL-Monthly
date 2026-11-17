@@ -319,6 +319,7 @@ window.FIREBASE_CONFIG = {
     const per = all.find((l) => /From\s+\w+\s+\d{2}\/\d{2}\/\d{4}/.test(l.text));
     if (per) {
       const m = per.text.match(/From\s+\w+\s+(\d{2})\/(\d{2})\/(\d{4}).*?To\s+\w+\s+(\d{2})\/(\d{2})\/(\d{4})/);
+      const tt = [...per.text.matchAll(/\d{1,2}\/\d{1,2}\/\d{4}\s+(\d{1,2}:\d{2})/g)].map((q) => q[1].padStart(5, '0')); out.fromT = tt[0] || null; out.toT = tt[1] || null;
       if (m) { out.from = `${m[3]}-${m[2]}-${m[1]}`; out.to = `${m[6]}-${m[5]}-${m[4]}`; out.year = +m[3]; out.month = +m[2];
         if ((Date.parse(out.to) - Date.parse(out.from)) / 864e5 > 1.5 && (m[1] !== '01' || m[4] !== '01')) out.warnings.push('Kỳ báo cáo không bắt đầu/kết thúc ngày 01: ' + out.from + ' → ' + out.to); }
     }
@@ -466,6 +467,7 @@ window.FIREBASE_CONFIG = {
     if (head) out.cinemaName = head.cells[head.cells.length - 1].t.trim();
     const cl = all.find((l) => /^Cinema:\s/.test(l.text)); if (cl) out.cinemaName = cl.text.replace(/^Cinema:\s*/, '').trim();
     const fr = all.find((l) => /^From\b/.test(l.text)); const m = fr && fr.text.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (fr) { const tt = [...fr.text.matchAll(/\d{1,2}\/\d{1,2}\/\d{4}\s+(\d{1,2}:\d{2})/g)].map((q) => q[1].padStart(5, '0')); out.fromT = tt[0] || null; out.toT = tt[1] || null; }
     if (m) { out.month = +m[2]; out.year = +m[3]; const pad = (x) => String(x).padStart(2, '0'); out.from = `${m[3]}-${pad(m[2])}-${pad(m[1])}`;
       const m2 = fr.text.slice(m.index + m[0].length).match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/); if (m2) out.to = `${m2[3]}-${pad(m2[2])}-${pad(m2[1])}`; }
     let cls = null, expectClass = false, last = null;
@@ -1548,7 +1550,7 @@ async function uploadAny(files) {
         const pg = await pdfItems(f);
         if (pg.some((p) => p.items.some((it) => /Concession Item Sales/.test(it.str)))) { // Vista Concession Item Sales
           const x = parseCS(pg); x.file = f.name; x.cinema = cinemaFromName(x.cinemaName); x.uploadedAt = new Date().toISOString(); r.type = 'PDF Concession Sales';
-          if (isDaily(x)) { const d = isoPad(x.from); r.type = 'PDF Concession Sales (ngày)'; const cc = coCounts(x.items);
+          if (isDaily(x) || S.mode === 'daily') { r.type = 'PDF Concession Sales (ngày)'; const er = dCheck(x); if (er) { r.check = er; res.push(r); continue; } const d = isoPad(x.from); const cc = coCounts(x.items);
             r.what = `${x.cinema || x.cinemaName || '?'} · ${dLab(d)}/${d.slice(0, 4)} · ${x.items.length} món · CB Online ${f0(cc['CB Online'])} · CB1 ${f0(cc.CB1)} · CB1Ex ${f0(cc.CB1Ex)} · CB2 ${f0(cc.CB2)} · CB2Ex ${f0(cc.CB2Ex)} · Drink ${f0(cc.Drink)} · Pop ${f0(cc.Pop)}`;
             if (!x.cinema) x.warnings.push('Không nhận ra rạp: ' + (x.cinemaName || '?')); r.ok = !!(x.cinema && d && x.items.length); r.check = x.warnings.join('; ');
             if (r.ok) { const k = DK(x.cinema, d); if (dGet('dcs', k)) r.note = 'Ghi đè bản cũ'; save.dcs[k] = { file: f.name, uploadedAt: x.uploadedAt, items: x.items.map((i) => [i.cls, i.item, i.qty, i.net]), total: x.total ? x.total.net : null }; }
@@ -1561,14 +1563,15 @@ async function uploadAny(files) {
           res.push(r); continue;
         }
         const v = parseVista(pg); v.file = f.name; v.cinema = cinemaFromName(v.cinemaName); v.uploadedAt = new Date().toISOString();
-        if (isDaily(v)) { const d = isoPad(v.from), kk = v.kpi; r.type = 'PDF Marketing Report (ngày)'; if (!v.cinema) v.warnings.push('Không nhận ra rạp: ' + (v.cinemaName || '?'));
+        if (isDaily(v) || S.mode === 'daily') { r.type = 'PDF Marketing Report (ngày)'; const er = dCheck(v); if (er) { r.check = er; res.push(r); continue; } const d = isoPad(v.from), kk = v.kpi; if (!v.cinema) v.warnings.push('Không nhận ra rạp: ' + (v.cinemaName || '?'));
           r.what = `${v.cinema || v.cinemaName || '?'} · ${dLab(d)}/${d.slice(0, 4)} · Admits ${f0(kk.adm)} · ATP ${fR(kk.adm ? kk.bo_sales / kk.adm : null)} · SPP ${fR(kk.adm ? kk.co_net / kk.adm : null)} · SRT ${fR(kk.adm_strike)}% · SPT ${fR(kk.avg_co_trans)} · ${v.films.length} phim`;
           r.ok = !!(v.cinema && d && kk.adm); r.check = v.warnings.filter((t) => !/Kỳ báo cáo/.test(t)).join('; ');
           if (r.ok) { const k = DK(v.cinema, d); if (dGet('dmk', k)) r.note = 'Ghi đè bản cũ'; save.dmk[k] = { file: f.name, uploadedAt: v.uploadedAt, kpi: v.kpi, channel: v.channel, group: v.group, films: v.films.map((q) => ({ film: q.film, opening: q.opening, week: q.week, sessions: q.sessions, adm: q.adm, nbo: q.nbo, occupancy: q.occupancy, atp: q.atp })) }; }
           res.push(r); continue; }
         if (!v.cinema) v.warnings.push('Không nhận ra rạp: ' + (v.cinemaName || '?')); if (!v.films.length) v.warnings.push('Không đọc được bảng phim');
         r.type = 'PDF Vista'; const kk = v.kpi; r.what = `${v.cinema || v.cinemaName || '?'} · ${v.month ? mlab(v.month) + '/' + v.year : '?'} · Admits ${f0(kk.adm)} · BO Sales ${f0(kk.bo_sales)} · CO Net ${f0(kk.co_net)} · Strike ${fR(kk.adm_strike)}% · Avg/CO trans ${fR(kk.avg_co_trans)} · ${v.films.length} phim · ${v.tickets.length} ticket type · ${v.combos.length} combo`;
-        r.ok = !!(v.cinema && v.year && v.month && v.kpi.adm); r.check = v.warnings.join('; '); r.note = (v.adjust || []).join('; ');
+        r.ok = !!(v.cinema && v.year && v.month && v.kpi.adm); r.check = v.warnings.join('; ');
+        if (v.from && v.to && (Date.parse(isoPad(v.to)) - Date.parse(isoPad(v.from))) / 864e5 < 27) { r.ok = false; r.check = `Không nhận: kỳ ${dShort(isoPad(v.from))} → ${dShort(isoPad(v.to))} không phải báo cáo tháng. File ngày tải ở tab Daily.`; } r.note = (v.adjust || []).join('; ');
         if (r.ok) { if (vGet(v.cinema, v.year, v.month)) r.note = ['Ghi đè bản cũ', r.note].filter(Boolean).join('; '); save.vista[K(v.cinema, v.year, v.month)] = v; }
       } else if (/\.xlsx?$/i.test(f.name)) {
         const book = await readBook(f, 130);
@@ -2033,6 +2036,11 @@ function fillSummary(sh, vis, refs, st, per) {
 const DK = (c, d) => c + '_' + d;
 const isoPad = (s) => { const m = String(s || '').match(/(\d{4})-(\d{1,2})-(\d{1,2})/); return m ? `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}` : null; };
 const isDaily = (x) => { const a = isoPad(x && x.from), b = isoPad(x && x.to); return !!(a && b && (Date.parse(b) - Date.parse(a)) / 864e5 <= 1.01); };
+// file daily hợp lệ: đúng 1 ngày, từ 00:00 đến 00:00 ngày hôm sau
+const dCheck = (x) => { const a = isoPad(x && x.from), b = isoPad(x && x.to); if (!a || !b) return 'Không đọc được kỳ báo cáo (From … To …)';
+  const t1 = x.fromT || '?', t2 = x.toT || '?', lab = `${dShort(a)}/${a.slice(0, 4)} ${t1} → ${dShort(b)}/${b.slice(0, 4)} ${t2}`;
+  if (b !== dAdd(a, 1)) return `Không nhận: kỳ ${lab} không phải 1 ngày. File daily phải từ 00:00 đến 00:00 ngày hôm sau.`;
+  if (t1 !== '00:00' || t2 !== '00:00') return `Không nhận: kỳ ${lab} không đúng mốc 00:00 → 00:00.`; return ''; };
 const dAdd = (d, n) => { const t = new Date(d + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
 const dDow = (d) => new Date(d + 'T00:00:00Z').getUTCDay();
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
