@@ -1015,7 +1015,7 @@ function shareTable(head, rows, ly, fmt = f0) {
   const T = rows.reduce((a, x) => a + (x.v || 0), 0), hasL = ly && Object.keys(ly).length, TL = hasL ? Object.values(ly).reduce((a, x) => a + (x || 0), 0) : 0;
   const tr = rows.map((x) => { const l = hasL ? ly[x.label] ?? null : null, s = T ? x.v / T : null, sl = fin(l) && TL ? l / TL : null;
     return `<tr><td class="t">${esc(x.label)}</td><td>${fmt(x.v)}</td><td><div class="sb"><i style="width:${(s || 0) * 100}%"></i></div>${pc(s)}</td><td>${fmt(l)}</td><td>${pc(sl)}</td><td class="${tone('num', fin(s) && fin(sl) ? s - sl : null)}">${fin(sl) ? dpt(s - sl) : '–'}</td><td class="${tone('num', ch(x.v, l))}">${dp(ch(x.v, l))}</td></tr>`; }).join('');
-  return `<div class="card tw"><table><thead><tr><th class="t">${head}</th><th>This Month</th><th>% This Month</th><th>LY</th><th>% LY</th><th>± điểm</th><th>vs LY</th></tr></thead><tbody>${tr}
+  return `<div class="card tw"><table><thead><tr><th class="t">${head}</th><th>This Month</th><th>% This Month</th><th>LY</th><th>% LY</th><th>±</th><th>vs LY</th></tr></thead><tbody>${tr}
   <tr class="tot"><td>Tổng</td><td>${fmt(T)}</td><td>100.0%</td><td>${hasL ? fmt(TL) : '–'}</td><td>${hasL ? '100.0%' : '–'}</td><td></td><td class="${tone('num', ch(T, TL || null))}">${dp(ch(T, TL || null))}</td></tr></tbody></table></div>`;
 }
 const stack = (...a) => a.filter(Boolean).join('');
@@ -1120,7 +1120,7 @@ function market(P) {
   const rows = mk.rows.map((r) => ln(r, r.me ? 'me' : '')).join('') + ln(mk.glx, 'tot', 'Galaxy trong cụm');
   const mx = Math.max(...mk.rows.map((x) => x.share || 0), 0.0001);
   const bars = `<table class="shr"><thead><tr><th class="t">Rạp</th><th class="t" style="width:52%">Tỷ trọng admission</th><th>Admission</th><th>% Adm</th></tr></thead><tbody>${mk.rows.map((x) => `<tr class="${x.me ? 'me' : ''}"><td class="t">${esc(x.exhibitor)}</td><td class="t"><div class="hbar"><i class="${x.me ? 'me' : x.chain === 'GLX' ? 'glx' : 'cp'}" style="width:${((x.share || 0) / mx) * 100}%"></i></div></td><td>${f0(x.adm)}</td><td>${pc(x.share)}</td></tr>`).join('')}</tbody></table>`;
-  return `<div class="card tw">${note}<table><thead><tr><th>Rạp</th><th>Admission</th><th>% Adm</th><th>% Last Month</th><th>± điểm</th><th>% LY</th><th>± điểm LY</th></tr></thead><tbody>${rows}</tbody></table></div>
+  return `<div class="card tw">${note}<table><thead><tr><th>Rạp</th><th>Admission</th><th>% Adm</th><th>% Last Month</th><th>±</th><th>% LY</th><th>± LY</th></tr></thead><tbody>${rows}</tbody></table></div>
   <div class="card tw" style="margin-top:12px">${bars}<div class="lg"><span><i style="background:var(--blue)"></i>Rạp đang xem</span><span><i style="background:var(--blue3)"></i>Galaxy khác</span><span><i style="background:#C9CCD1"></i>Đối thủ</span></div></div>`;
 }
 
@@ -1243,11 +1243,11 @@ function comboShift(P, Y) {
     rows.push({ l, c2, q1: a.q, s1: a.q / M1.Q, p1: a.q ? a.n / a.q : null, q0: b ? b.q : null, s0: b ? b.q / M0.Q : null, p0: b && b.q ? b.n / b.q : null }); }));
   const avg0 = M0 ? M0.N / M0.Q : null;
   const tr = rows.map((x) => { const d = fin(x.s0) ? x.s1 - x.s0 : null; const imp = fin(d) && fin(x.p0 ?? x.p1) && fin(avg0) ? d * ((x.p0 ?? x.p1) - avg0) : null; x.imp = imp;
-    return `<tr><td class="t">${esc(x.l)}</td><td class="t">${CHN[x.c2]}${M0 && x.q0 === 0 && x.q1 > 0 ? ' <span class="cs2">mới mở</span>' : ''}</td><td>${f0(x.q1)}</td><td>${pc(x.s1)}</td><td>${M0 ? f0(x.q0) : '–'}</td><td>${M0 ? pc(x.s0) : '–'}</td><td class="${tone('num', d)}">${fin(d) ? dpt(d) : '–'}</td><td>${fR(x.p1)}</td><td class="${tone('num', imp)}">${fin(imp) ? fR(imp) : '–'}</td></tr>`; }).join('');
+    return `<tr><td class="t">${esc(x.l)}</td><td class="t">${CHN[x.c2]}${M0 && x.q0 === 0 && x.q1 > 0 ? ' <span class="cs2">mới mở</span>' : ''}</td><td>${f0(x.q1)}</td><td>${pc(x.s1)}</td><td>${M0 ? f0(x.q0) : '–'}</td><td>${M0 ? pc(x.s0) : '–'}</td><td class="${tone('num', d)}">${fin(d) ? dpt(d) : '–'}</td><td>${fR(x.p1)}</td><td>${fR(x.p0)}</td>${dcell('num', x.p1, x.p0)}<td class="${tone('num', imp)}">${fin(imp) ? fR(Math.abs(imp) < 0.05 ? 0 : imp) : '–'}</td></tr>`; }).join('');
   const impT = rows.reduce((s, x) => s + (x.imp || 0), 0);
-  const tot = `<tr class="tot"><td>Tổng</td><td></td><td>${f0(M1.Q)}</td><td>100.0%</td><td>${M0 ? f0(M0.Q) : '–'}</td><td>${M0 ? '100.0%' : '–'}</td><td>${M0 ? '0.0%' : '–'}</td><td>${fR(M1.N / M1.Q)}</td><td class="${tone('num', impT)}">${M0 ? fR(impT) : '–'}</td></tr>`;
+  const tot = `<tr class="tot"><td>Tổng</td><td></td><td>${f0(M1.Q)}</td><td>100.0%</td><td>${M0 ? f0(M0.Q) : '–'}</td><td>${M0 ? '100.0%' : '–'}</td><td>${M0 ? '0.0%' : '–'}</td><td>${fR(M1.N / M1.Q)}</td><td>${M0 ? fR(M0.N / M0.Q) : '–'}</td>${M0 ? dcell('num', M1.N / M1.Q, M0.N / M0.Q) : '<td>–</td>'}<td class="${tone('num', impT)}">${M0 ? fR(impT) : '–'}</td></tr>`;
   const det = CT.map(([k, l]) => { const its = Y.cur.items.filter((it) => (it.cls === 'CO Combo' || (it.cls === 'CO Online' && /combo/i.test(it.item))) && comboGroup(it.item) === k); return `<div><b>${esc(l)}</b>: ${its.map((it) => esc(it.item)).join(', ') || '–'}</div>`; }).join('');
-  return `<div class="ct sub">Dịch chuyển cơ cấu combo (số phần, mỗi khách chọn 1 combo)</div><div class="card tw"><table><thead><tr><th class="t">Loại</th><th class="t">Kênh</th><th>This Month</th><th>% số phần</th><th>${base ? base.lab : 'Kỳ so sánh'}</th><th>% số phần</th><th>± điểm</th><th>Giá/phần</th><th>Tác động lên giá BQ</th></tr></thead><tbody>${tr}${tot}</tbody></table>
+  return `<div class="ct sub">Dịch chuyển cơ cấu combo</div><div class="card tw"><table><thead><tr><th class="t">Loại</th><th class="t">Kênh</th><th>This Month</th><th>% số phần</th><th>${base ? base.lab : 'Kỳ so sánh'}</th><th>% số phần</th><th>±</th><th>Giá/phần ${P.y}</th><th>Giá/phần ${base && base.lab === 'Last Year' ? P.y - 1 : 'Last Month'}</th><th>% giá</th><th>Tác động lên giá BQ</th></tr></thead><tbody>${tr}${tot}</tbody></table>
     <details class="cls-map"><summary>Món được xếp vào từng loại combo (kỳ này)</summary>${det}</details></div>`;
 }
 
@@ -1691,7 +1691,7 @@ function extras(sh, ci, P, V, VL, S0) {
   // Market share
   const mk = marketView(c, P);
   sec('Market share' + (ci.cluster ? ' - cụm ' + ci.cluster : ''));
-  if (mk && mk.months.length) { head(['Rạp', 'Admission', '% Adm', 'Admission LY', '% Adm LY', 'vs LY (điểm)']); const r0 = r, r1 = r + mk.rows.length - 1;
+  if (mk && mk.months.length) { head(['Rạp', 'Admission', '% Adm', 'Admission LY', '% Adm LY', '±']); const r0 = r, r1 = r + mk.rows.length - 1;
     mk.rows.forEach((x) => row([x.exhibitor, x.adm, F(`=IFERROR(C${r}/SUM($C$${r0}:$C$${r1}),"-")`), mk.lyOk ? x.adm_ly ?? 0 : null, F(`=IFERROR(E${r}/SUM($E$${r0}:$E$${r1}),"-")`), F(`=IFERROR(D${r}-F${r},"-")`)], ['int', 'pct', 'int', 'pct', 'pct'], x.me)); }
   else row(['Chưa có số thị phần cho kỳ này'], []);
   r++; NT.market.forEach((f) => noteRow(f)); r += 2;
