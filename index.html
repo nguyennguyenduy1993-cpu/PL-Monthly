@@ -799,13 +799,27 @@ function sectionNotes(c, P, V) {
     else if (fin(mk.me.pts_prev)) add('market', mk.me.pts_prev >= 0 ? 'good' : 'bad', `Thị phần ${dpt(mk.me.pts_prev)} so với kỳ trước (chưa có số cùng kỳ).`);
     const comp = mk.rows.filter((r) => r.chain !== 'GLX' && fin(r.pts_ly)).sort((a, b) => b.pts_ly - a.pts_ly)[0];
     if (comp && comp.pts_ly > 0.01) add('market', 'warn', `${comp.exhibitor} tăng ${dpt(comp.pts_ly)} thị phần so với cùng kỳ, mạnh nhất trong các đối thủ.`, 'Theo dõi chương trình giá/khuyến mãi của rạp này.'); }
-  // Top film
-  if (V && V.films.length) { const TA = V.films.reduce((s, f) => s + f.adm, 0), TS = V.films.reduce((s, f) => s + f.sessions, 0);
-    const t3 = V.films.slice(0, 3).reduce((s, f) => s + f.adm, 0) / TA; add('film', t3 > 0.6 ? 'warn' : 'flat', `Top 3 phim chiếm ${pc(t3)} admit, ${fR(TA / TS)} admit/suất bình quân.`);
-    const over = V.films.slice(0, 15).filter((f) => f.sessions / TS - f.adm / TA > 0.03).slice(0, 2), under = V.films.slice(0, 15).filter((f) => f.adm / TA - f.sessions / TS > 0.03).slice(0, 2);
-    over.forEach((f) => add('film', 'bad', `${f.film}: ${pc(f.sessions / TS)} suất nhưng chỉ ${pc(f.adm / TA)} admit (${fR(f.adm / f.sessions)} admit/suất).`, 'Cân nhắc giảm suất, dời sang phim có lấp đầy cao hơn.'));
-    under.forEach((f) => add('film', 'good', `${f.film}: ${pc(f.adm / TA)} admit trên ${pc(f.sessions / TS)} suất (${fR(f.adm / f.sessions)} admit/suất).`, 'Cân nhắc tăng suất giờ cao điểm.'));
-    const la = ly && ly.adm; if (fin(la)) add('film', TA >= la ? 'good' : 'bad', `Tổng admit ${dp(ch(TA, la))} so với cùng kỳ.`); }
+  // Top film: mức tập trung, phân bổ suất, film mới vs chuyển tiếp, so LM/LY
+  { const X = vSets(P), C0 = X.cur;
+    if (C0 && C0.films.length) { const F = C0.films, TA = F.reduce((s, f) => s + f.adm, 0), TS = F.reduce((s, f) => s + f.sessions, 0), avg = TA / TS;
+      const lmM = P.prevPairs.map((p) => p[1]), lmY = P.prevPairs.length ? P.prevPairs[0][0] : P.y;
+      const s0 = filmStats(C0, P.y, P.M), sL = filmStats(X.lm, lmY, lmM), sY = filmStats(X.ly, P.y - 1, P.M);
+      const cmp = (k, label) => [sL && fin(sL[k]) ? `${dpt(s0[k] - sL[k])} so với last month` : '', sY && fin(sY[k]) ? `${dpt(s0[k] - sY[k])} so với cùng kỳ` : ''].filter(Boolean).join(', ');
+      const top = F[0]; const c3 = cmp('a3');
+      add('film', s0.a1 > 0.45 ? 'warn' : 'flat', `${top.film} dẫn đầu với ${pc(s0.a1)} admit trên ${pc(s0.s1)} suất (${fR(top.adm / top.sessions)} admit/suất so với bình quân ${fR(avg)}${top.occ && top.occ.length === 1 ? `, %OCC ${pc(top.occ[0])}` : ''}).`,
+        s0.a1 > 0.45 ? 'Doanh thu phụ thuộc lớn vào 1 phim: chuẩn bị lịch chiếu thay thế khi phim này giảm nhiệt.' : '');
+      add('film', 'flat', `Top 3 chiếm ${pc(s0.a3)} admit, Top 10 chiếm ${pc(s0.a10)}${c3 ? ` (Top 3 ${c3})` : ''}.`);
+      const nwA = F.filter((f) => isNewFilm(f, P.y, P.M) === true).reduce((s, f) => s + f.adm, 0);
+      add('film', 'flat', `${s0.nw} film mới khởi chiếu mang về ${pc(nwA / TA)} admit; ${s0.old} film chuyển tiếp chiếm ${pc(1 - nwA / TA)}.`);
+      if (sL && fin(sL.aps)) { const d = ch(s0.aps, sL.aps); add('film', d >= 0 ? 'good' : 'bad', `Admit/suất ${fR(s0.aps)}, ${dp(d)} so với last month${sY ? `, ${dp(ch(s0.aps, sY.aps))} so với cùng kỳ` : ''}; suất chiếu ${dp(ch(s0.ses, sL.ses))}, admit ${dp(ch(s0.adm, sL.adm))} so với last month.`); }
+      else if (sY) add('film', ch(s0.aps, sY.aps) >= 0 ? 'good' : 'bad', `Admit/suất ${fR(s0.aps)}, ${dp(ch(s0.aps, sY.aps))} so với cùng kỳ.`);
+      const T15 = F.slice(0, 15);
+      const over = T15.filter((f) => f.sessions / TS - f.adm / TA > 0.03).sort((a, b) => (b.sessions / TS - b.adm / TA) - (a.sessions / TS - a.adm / TA)).slice(0, 3);
+      const under = T15.filter((f) => f.adm / TA - f.sessions / TS > 0.03).sort((a, b) => (b.adm / TA - b.sessions / TS) - (a.adm / TA - a.sessions / TS)).slice(0, 3);
+      if (over.length) add('film', 'bad', `Thừa suất so với sức bán: ${over.map((f) => `${f.film} (${pc(f.sessions / TS)} suất, ${pc(f.adm / TA)} admit, ${fR(f.adm / f.sessions)} admit/suất)`).join('; ')}.`, 'Giảm suất giờ thấp điểm của các phim này, chuyển sang phim có admit/suất cao hơn.');
+      if (under.length) add('film', 'good', `Đang bán tốt hơn số suất được xếp: ${under.map((f) => `${f.film} (${pc(f.adm / TA)} admit trên ${pc(f.sessions / TS)} suất, ${fR(f.adm / f.sessions)} admit/suất)`).join('; ')}.`, 'Cân nhắc tăng suất giờ cao điểm cho các phim này.');
+      const weak = T15.filter((f) => f.sessions >= 10 && f.adm / f.sessions < avg * 0.5).slice(0, 3);
+      if (weak.length) add('film', 'warn', `Admit/suất dưới một nửa bình quân: ${weak.map((f) => `${f.film} ${fR(f.adm / f.sessions)}`).join(', ')}.`, 'Rà lại suất của các phim này trong lịch tuần tới.'); } }
   // Ticket type
   if (V && V.tickets.length) { const pr = V.tickets.filter((t) => PROMO.test(t.ticket_type)); const pa = pr.reduce((s, t) => s + t.adm, 0), pn = pr.reduce((s, t) => s + t.net, 0);
     if (pa) add('ticket', pa / V.adm > 0.45 ? 'warn' : 'flat', `Vé khuyến mãi/đối tác chiếm ${pc(pa / V.adm)} admit, ATP ${fR((pn * 1000) / pa)} so với ATP chung ${fR((V.nbo * 1000) / V.adm)}.`, pa / V.adm > 0.45 ? 'Rà ngân sách chương trình đối tác (MoMo, Zalo, U22) so với mức tăng admit mang lại.' : '');
@@ -815,11 +829,40 @@ function sectionNotes(c, P, V) {
     const late = V.lead.filter((l) => l.order >= 7).reduce((s, l) => s + l.adm, 0), LT = V.lead.reduce((s, l) => s + l.adm, 0);
     if (LT && late / LT > 0.15) add('ticket', 'warn', `${pc(late / LT)} admit mua trong 15 phút cuối hoặc sau giờ chiếu.`, 'Bố trí thêm quầy/kiosk 30 phút trước suất cao điểm.');
     if (VL) { const m = Object.fromEntries(VL.tickets.map((t) => [t.ticket_type, t])); const top = V.tickets[0]; const l = m[top.ticket_type]; if (l) add('ticket', 'flat', `${top.ticket_type} dẫn đầu với ${f0(top.adm)} admit (${dp(ch(top.adm, l.adm))} so với cùng kỳ).`); } }
-  // CO class
-  if (V && Object.keys(V.cls).length) { const T = Object.values(V.cls).reduce((s, v) => s + v, 0); const spp = (T * 1000) / V.adm;
-    add('coclass', 'flat', `SPP ${f2(spp)} nghìn đ${ly && fin(ly.spp) ? ` (${dp(ch(spp, ly.spp))} so với cùng kỳ)` : ''}${bp && fin(bp.spp) ? `, ${dp(ch(spp, bp.spp))} so với BP` : ''}.`, bp && spp < bp.spp ? 'Đẩy upsell combo tại quầy và combo online theo phim top tuần.' : '');
-    const cb = Object.entries(V.cls).filter(([k]) => /combo/i.test(k)).reduce((s, [, v]) => s + v, 0); if (cb) add('coclass', 'flat', `Combo chiếm ${pc(cb / T)} doanh thu F&B.`);
-    if (VL) { const worst = Object.entries(V.cls).map(([k, v]) => [k, ch(v, VL.cls[k])]).filter(([, d]) => fin(d)).sort((a, b) => a[1] - b[1])[0]; if (worst && worst[1] < -0.05) add('coclass', 'bad', `${worst[0]} giảm ${dp(worst[1])} so với cùng kỳ.`); } }
+  // CO class: từng nhóm tăng/giảm theo SPP (loại trừ ảnh hưởng của admission), mạnh/yếu, cơ cấu, combo sale
+  { const X = vSets(P);
+    if (X.cur && Object.keys(X.cur.cls).length) {
+      const C = clsMap(X.cur), Lm = clsMap(X.lm), Ly = clsMap(X.ly), A = X.cur.adm, AL = X.lm ? X.lm.adm : null, AY = X.ly ? X.ly.adm : null;
+      const KS = ['CO Combo', 'CO Online', 'CO Drinks', 'CO Food', 'Cine Munch/Blv'].filter((k) => C[k]);
+      const T = KS.reduce((s, k) => s + C[k], 0) + (C['Movie Combo'] || 0) + (C['Khác'] || 0), spp = T / A;
+      const sp = (o, k, ad) => (o && ad && fin(o[k]) ? o[k] / ad : null);
+      add('coclass', 'flat', `SPP ${fR(spp)} nghìn đ${Lm && AL ? `, ${dp(ch(spp, Object.values(Lm).reduce((s, v) => s + (v || 0), 0) / AL))} so với last month` : ''}${ly && fin(ly.spp) ? `, ${dp(ch(spp, ly.spp))} so với cùng kỳ` : ''}${bp && fin(bp.spp) ? `, ${dp(ch(spp, bp.spp))} so với BP` : ''}.`);
+      const base = Ly && AY ? { o: Ly, a: AY, lab: 'cùng kỳ' } : Lm && AL ? { o: Lm, a: AL, lab: 'last month' } : null;
+      const ACT = { 'CO Combo': 'Đẩy upsell lên combo Extra tại quầy, gợi ý combo theo phim top tuần.', 'CO Online': 'Kiểm tra hiển thị combo trên app/web khi đặt vé, tăng ưu đãi combo online cho suất cao điểm.',
+        'CO Drinks': 'Gợi ý nâng size L và nước kèm bắp cho khách mua lẻ.', 'CO Food': 'Kiểm tra tồn và chất lượng bắp, đẩy bắp vị mới tại quầy.', 'Cine Munch/Blv': 'Kiểm tra menu Cine Munch: món hết hàng, thời gian chờ.' };
+      if (base) { const ds = KS.map((k) => [k, sp(C, k, A), sp(base.o, k, base.a)]).filter(([, a2, b2]) => fin(a2) && fin(b2) && b2 > 0).map(([k, a2, b2]) => [k, a2, b2, a2 / b2 - 1]).sort((x, y) => y[3] - x[3]);
+        const up = ds.filter((d) => d[3] > 0.02), dn = ds.filter((d) => d[3] < -0.02).reverse();
+        if (up.length) add('coclass', 'good', `Đang mạnh (SPP so với ${base.lab}): ${up.map(([k, a2, b2, d]) => `${k} ${fR(a2)} (${dp(d)})`).join(', ')}.`);
+        if (dn.length) add('coclass', 'bad', `Đang yếu (SPP so với ${base.lab}): ${dn.map(([k, a2, b2, d]) => `${k} ${fR(a2)} (${dp(d)})`).join(', ')}.`, ACT[dn[0][0]]);
+        if (!up.length && !dn.length) add('coclass', 'flat', `SPP từng nhóm đi ngang so với ${base.lab} (chênh lệch dưới 2%).`); }
+      const mix = KS.map((k) => [k, C[k] / T]).sort((x, y) => y[1] - x[1]);
+      add('coclass', 'flat', `Cơ cấu F&B: ${mix.map(([k, s2]) => `${k} ${pc(s2)}`).join(', ')}.`);
+      if (base) { const TB = Object.values(base.o).reduce((s, v) => s + (v || 0), 0); const sh = KS.map((k) => [k, C[k] / T - (base.o[k] || 0) / TB]).filter(([, d]) => Math.abs(d) >= 0.02).sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]));
+        if (sh.length) add('coclass', 'flat', `Dịch chuyển cơ cấu so với ${base.lab}: ${sh.map(([k, d]) => `${k} ${dpt(d)}`).join(', ')}.`); }
+      const onS = (C['CO Online'] || 0) / T; if (fin(onS)) add('coclass', onS < 0.2 ? 'warn' : 'flat', `F&B bán online chiếm ${pc(onS)} doanh thu F&B (${fR(sp(C, 'CO Online', A))} nghìn đ/admit).`, onS < 0.2 ? 'Đẩy combo khi khách đặt vé online: hiển thị combo ở bước chọn ghế.' : '');
+      // Combo Sale (Concession Sales)
+      const Y = csSets(P);
+      if (Y.cur) { const g = Y.cur.combo, ad = (o, yy) => { const r2 = o ? agg(P.c, yy, o.months) : null; return r2 ? r2.adm : null; };
+        const ex = g.extra / g.total, u = g.u22 / g.total, gr = g.group / g.total;
+        add('coclass', 'flat', `Combo sale ${f0(g.total)} nghìn đ: Extra ${pc(ex)}, Standard ${pc(g.standard / g.total)}, U22 ${pc(u)}, Group ${pc(gr)}.`);
+        const bC = Y.ly ? { o: Y.ly, y: P.y - 1, lab: 'cùng kỳ' } : Y.lm ? { o: Y.lm, y: P.prevPairs[0][0], lab: 'last month' } : null;
+        if (bC) { const a0 = ad(Y.cur, P.y), a1 = ad(bC.o, bC.y); const GL = [['Extra', 'extra'], ['Standard', 'standard'], ['U22', 'u22'], ['Group', 'group']];
+          const ds = GL.map(([l, k]) => [l, g[k] / a0, bC.o.combo[k] / a1]).filter(([, x, y2]) => fin(x) && fin(y2) && y2 > 0).map(([l, x, y2]) => [l, x, x / y2 - 1]);
+          const up = ds.filter((d) => d[2] > 0.02), dn = ds.filter((d) => d[2] < -0.02);
+          if (up.length) add('coclass', 'good', `Combo tăng (SPP so với ${bC.lab}): ${up.map(([l, x, d]) => `${l} ${fR(x)} (${dp(d)})`).join(', ')}.`);
+          if (dn.length) add('coclass', 'bad', `Combo giảm (SPP so với ${bC.lab}): ${dn.map(([l, x, d]) => `${l} ${fR(x)} (${dp(d)})`).join(', ')}.`, dn.some((d) => d[0] === 'Extra') ? 'Nhắc quầy chào combo Extra trước, kiểm tra tồn ly/bắp size Extra.' : 'Rà chương trình combo nhóm và U22 theo lịch phim.');
+          const exB = bC.o.combo.extra / bC.o.combo.total; if (fin(exB)) add('coclass', ex >= exB ? 'good' : 'warn', `Tỷ lệ Extra trong combo ${pc(ex)}, ${dpt(ex - exB)} so với ${bC.lab}.`, ex < exB ? 'Tỷ lệ nâng lên Extra giảm: kiểm tra lại kịch bản upsell tại quầy.' : ''); }
+        else if (ex < 0.35) add('coclass', 'warn', `Extra chỉ chiếm ${pc(ex)} doanh thu combo, Standard ${pc(g.standard / g.total)}.`, 'Đẩy upsell từ Standard lên Extra tại quầy và trên app.'); } } }
   // Top 10 CO
   if (V && V.combos.length) { const T = V.co_net; const s10 = V.combos.slice(0, 10).reduce((s, x) => s + x.net, 0); add('coitems', 'flat', `Top 10 combo chiếm ${pc(s10 / T)} doanh thu F&B; ${V.combos[0].item} dẫn đầu ${f1(V.combos[0].net)} triệu.`);
     const low = V.items.filter((x) => x.mOk && x.net && x.margin / x.net < 0.75); if (low.length) add('coitems', 'warn', `${low.length} món trong top doanh thu có margin dưới 75%: ${low.map((x) => `${x.item} ${pc(x.margin / x.net)}`).join(', ')}.`, 'Kiểm tra định lượng, giá vốn và giá bán các món này.');
@@ -925,7 +968,7 @@ function shareTable(head, rows, ly, fmt = f0) {
   const T = rows.reduce((a, x) => a + (x.v || 0), 0), hasL = ly && Object.keys(ly).length, TL = hasL ? Object.values(ly).reduce((a, x) => a + (x || 0), 0) : 0;
   const tr = rows.map((x) => { const l = hasL ? ly[x.label] ?? null : null, s = T ? x.v / T : null, sl = fin(l) && TL ? l / TL : null;
     return `<tr><td class="t">${esc(x.label)}</td><td>${fmt(x.v)}</td><td><div class="sb"><i style="width:${(s || 0) * 100}%"></i></div>${pc(s)}</td><td>${fmt(l)}</td><td>${pc(sl)}</td><td class="${tone('num', fin(s) && fin(sl) ? s - sl : null)}">${fin(sl) ? dpt(s - sl) : '–'}</td><td class="${tone('num', ch(x.v, l))}">${dp(ch(x.v, l))}</td></tr>`; }).join('');
-  return `<div class="card tw"><table><thead><tr><th class="t">${head}</th><th>Kỳ này</th><th>% kỳ này</th><th>LY</th><th>% LY</th><th>± điểm</th><th>vs LY</th></tr></thead><tbody>${tr}
+  return `<div class="card tw"><table><thead><tr><th class="t">${head}</th><th>This Month</th><th>% This Month</th><th>LY</th><th>% LY</th><th>± điểm</th><th>vs LY</th></tr></thead><tbody>${tr}
   <tr class="tot"><td>Tổng</td><td>${fmt(T)}</td><td>100.0%</td><td>${hasL ? fmt(TL) : '–'}</td><td>${hasL ? '100.0%' : '–'}</td><td></td><td class="${tone('num', ch(T, TL || null))}">${dp(ch(T, TL || null))}</td></tr></tbody></table></div>`;
 }
 const stack = (...a) => a.filter(Boolean).join('');
@@ -944,7 +987,7 @@ function overall(P) {
   const ytdL = plabel(P.y, P.ytdM);
   const pst = (o) => (!o ? '' : o.partial > 0 ? `<span class="star" title="Năm trước không có số: ${(o.miss.adm || []).map(mlab).join(', ')}. So sánh theo các tháng có số.">*</span>` : '');
   const table = `<div class="card tw"><table><thead><tr><th rowspan="2">Chỉ tiêu</th><th class="grp" colspan="7">${plabel(P.y, P.M)}</th><th class="grp sep" colspan="5">YTD ${ytdL}</th></tr>
-  <tr><th>Actual</th><th>BP</th><th>Kỳ trước${pst(prev)}</th><th>LY${pst(ly)}</th><th>vs BP</th><th>vs Kỳ trước</th><th>vs LY</th><th class="sep">Actual</th><th>BP</th><th>LY${pst(ytdLy)}</th><th>vs BP</th><th>vs LY</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  <tr><th>Actual</th><th>BP</th><th>Last Month${pst(prev)}</th><th>LY${pst(ly)}</th><th>vs BP</th><th>vs Last Month</th><th>vs LY</th><th class="sep">Actual</th><th>BP</th><th>LY${pst(ytdLy)}</th><th>vs BP</th><th>vs LY</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   return table;
 }
 /* 02 Tổng quan 12 tháng: 1 biểu đồ, chọn chỉ tiêu cần xem; năm nay vs LY vs BP */
@@ -1030,7 +1073,7 @@ function market(P) {
   const rows = mk.rows.map((r) => ln(r, r.me ? 'me' : '')).join('') + ln(mk.glx, 'tot', 'Galaxy trong cụm');
   const mx = Math.max(...mk.rows.map((x) => x.share || 0), 0.0001);
   const bars = `<table class="shr"><thead><tr><th class="t">Rạp</th><th class="t" style="width:52%">Tỷ trọng admission</th><th>Admission</th><th>% Adm</th></tr></thead><tbody>${mk.rows.map((x) => `<tr class="${x.me ? 'me' : ''}"><td class="t">${esc(x.exhibitor)}</td><td class="t"><div class="hbar"><i class="${x.me ? 'me' : x.chain === 'GLX' ? 'glx' : 'cp'}" style="width:${((x.share || 0) / mx) * 100}%"></i></div></td><td>${f0(x.adm)}</td><td>${pc(x.share)}</td></tr>`).join('')}</tbody></table>`;
-  return `<div class="card tw">${note}<table><thead><tr><th>Rạp</th><th>Admission</th><th>% Adm</th><th>% Kỳ trước</th><th>± điểm</th><th>% LY</th><th>± điểm LY</th></tr></thead><tbody>${rows}</tbody></table></div>
+  return `<div class="card tw">${note}<table><thead><tr><th>Rạp</th><th>Admission</th><th>% Adm</th><th>% Last Month</th><th>± điểm</th><th>% LY</th><th>± điểm LY</th></tr></thead><tbody>${rows}</tbody></table></div>
   <div class="card tw" style="margin-top:12px">${bars}<div class="lg"><span><i style="background:var(--blue)"></i>Rạp đang xem</span><span><i style="background:var(--blue3)"></i>Galaxy khác</span><span><i style="background:#C9CCD1"></i>Đối thủ</span></div></div>`;
 }
 
@@ -1044,7 +1087,7 @@ function csSets(P) { const c = P.c; const ly = csPeriod(c, P.y - 1, P.M);
   return { cur: csPeriod(c, P.y, P.M), lm: csPrev(P), ly: ly && ly.complete ? ly : null, ytd: csPeriod(c, P.y, P.ytdM), ytdLy: csPeriod(c, P.y - 1, P.ytdM) }; }
 const ytdNote = () => ''; // YTD cộng các tháng đã có dữ liệu – không cần chú thích
 const cmpHead = (P, first) => `<thead><tr class="gh"><th></th><th colspan="5">${plabel(P.y, P.M)}</th><th colspan="3" class="sep">YTD ${mlab(1)}–${mlab(Math.max(...P.M))}</th></tr>
-  <tr><th class="t">${first}</th><th>Kỳ này</th><th>Last Month</th><th>Last Year</th><th>% vs LM</th><th>% vs LY</th><th class="sep">${P.y}</th><th>${P.y - 1}</th><th>% vs LY</th></tr></thead>`;
+  <tr><th class="t">${first}</th><th>This Month</th><th>Last Month</th><th>Last Year</th><th>% vs LM</th><th>% vs LY</th><th class="sep">${P.y}</th><th>${P.y - 1}</th><th>% vs LY</th></tr></thead>`;
 // rows: [{label, k:'num'|'money'|'ratio'|'pct'|'k1', v:[cur,lm,ly,ytd,ytdLy], cls}]
 function cmpRows(rows) {
   const F = (k, v) => (!fin(v) ? '–' : k === 'pct' ? pc(v) : k === 'ratio' ? fR(v) : f0(v));
@@ -1079,7 +1122,7 @@ function film(V, P) {
   const t0 = cmpTable(P, 'Mức tập trung', rows, ytdNote(P, X, 'PDF Marketing Report'));
   const V0 = X.cur, TA = V0.films.reduce((a, f) => a + f.adm, 0), TS = V0.films.reduce((a, f) => a + f.sessions, 0), one = V0.months.length === 1;
   const fl = V0.films.slice(0, 15).map((f, i) => { const nw = isNewFilm(f, P.y, P.M); return `<tr><td>${i + 1}</td><td class="t">${esc(f.film)}</td><td>${f0(f.sessions)}</td><td>${pc(f.sessions / TS)}</td><td>${f0(f.adm)}</td><td>${pc(f.adm / TA)}</td><td>${fR(f.adm / f.sessions)}</td><td>${f0(f.nbo)}</td><td>${one ? pc(f.occ[0]) : '–'}</td><td>${fR((f.nbo * 1000) / f.adm)}</td><td class="${nw ? 'good' : 'flat'}">${esc(fmtOpen(f))}${nw === true ? ' · mới' : nw === false ? ' · chuyển tiếp' : ''}</td></tr>`; }).join('');
-  return t0 + `<div class="card tw" style="margin-top:12px"><div class="ct">Top 15 phim ${plabel(P.y, P.M)}</div><table><thead><tr><th>#</th><th class="t">Phim</th><th>Suất</th><th>% Suất</th><th>Admit</th><th>% Admit</th><th>Admit/suất</th><th>NBO</th><th>Lấp đầy</th><th>ATP</th><th>Khởi chiếu</th></tr></thead><tbody>${fl}</tbody></table></div>`;
+  return t0 + `<div class="card tw" style="margin-top:12px"><div class="ct">Top 15 phim ${plabel(P.y, P.M)}</div><table><thead><tr><th>#</th><th class="t">Phim</th><th>Suất</th><th>% Suất</th><th>Admit</th><th>% Admit</th><th>Admit/suất</th><th>NBO</th><th>%OCC</th><th>ATP</th><th>Khởi chiếu</th></tr></thead><tbody>${fl}</tbody></table></div>`;
 }
 
 /* 05 Ticket type: tháng (kỳ này | LM | LY) + YTD */
@@ -1202,7 +1245,7 @@ function opex(P) {
   const rows = G.map(([lab, a, s, p, l, f, stx, lv]) => { const g = fin(a) && fin(s) && s ? a / s - 1 : null; const cls = !fin(g) ? '' : g > 0.05 ? 'bad' : g < -0.05 ? 'good' : 'flat';
     const bk = BK[lab], bv = bp && bk && fin(bp[bk]) ? Math.abs(bp[bk]) : null; const gb = (lab === 'a. Payroll' && cur.payroll_gap) ? null : ch(a, bv);
     const hd = !lv; return `<tr class="${hd ? 'grp b' : 'l' + lv}"><td>${lab}${stx}</td><td>${F[f](a)}</td><td>${F[f](bv)}</td><td class="${tone('cost', gb)}">${dp(gb)}</td><td>${F[f](s)}</td><td class="${cls}">${dp(g)}</td><td>${F[f](p)}</td><td class="${tone('cost', ch(a, p))}">${dp(ch(a, p))}</td><td>${F[f](l)}</td><td class="${tone('cost', ch(a, l))}">${dp(ch(a, l))}</td></tr>`; }).join('');
-  const t1 = `<div class="card tw"><table><thead><tr><th>Hạng mục</th><th>Actual</th><th>BP</th><th>vs BP</th><th>Standard</th><th>vs Std</th><th>Kỳ trước</th><th>vs kỳ trước</th><th>LY</th><th>vs LY</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  const t1 = `<div class="card tw"><table><thead><tr><th>Hạng mục</th><th>Actual</th><th>BP</th><th>vs BP</th><th>Standard</th><th>vs Std</th><th>Last Month</th><th>vs Last Month</th><th>LY</th><th>vs LY</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   // kWh by band, 12 months: each bar = 100% of that month's kWh
   const kb = (y, m) => { const x = plGet(P.c, y, m); return x ? { m, low: Math.abs(x.kwh_low || 0), mid: Math.abs(x.kwh_mid || 0), peak: Math.abs(x.kwh_peak || 0) } : null; };
   const B = Array.from({ length: 12 }, (_, i) => kb(P.y, i + 1)).filter((b) => b && b.low + b.mid + b.peak > 0);
@@ -1592,7 +1635,7 @@ function extras(sh, ci, P, V, VL, S0) {
   sec('Top film - mức tập trung');
   { const X = vSets(P), lmM = P.prevPairs.map((p) => p[1]), lmY = P.prevPairs.length ? P.prevPairs[0][0] : P.y;
     const st = [filmStats(X.cur, P.y, P.M), filmStats(X.lm, lmY, lmM), filmStats(X.ly, P.y - 1, P.M), filmStats(X.ytd, P.y, P.ytdM), filmStats(X.ytdLy, P.y - 1, P.ytdM)];
-    if (st[0]) { head(['Chỉ tiêu', 'Kỳ này', 'Last Month', 'Last Year', '% vs LM', '% vs LY', `YTD ${P.y}`, `YTD ${P.y - 1}`, '% vs LY']);
+    if (st[0]) { head(['Chỉ tiêu', 'This Month', 'Last Month', 'Last Year', '% vs LM', '% vs LY', `YTD ${P.y}`, `YTD ${P.y - 1}`, '% vs LY']);
       const R = [['Số lượng film', 'n', 'int'], ['Film mới khởi chiếu', 'nw', 'int'], ['Film chuyển tiếp', 'old', 'int'], ['Suất chiếu', 'ses', 'int'], ['Admit', 'adm', 'int'], ['Admit / suất', 'aps', 'dec1'],
         ['Top 1 - % admit', 'a1', 'pct'], ['Top 3 - % admit', 'a3', 'pct'], ['Top 5 - % admit', 'a5', 'pct'], ['Top 10 - % admit', 'a10', 'pct'], ['Top 1 - % suất', 's1', 'pct'], ['Top 3 - % suất', 's3', 'pct'], ['Top 5 - % suất', 's5', 'pct'], ['Top 10 - % suất', 's10', 'pct']];
       R.forEach(([l, k, f]) => { const v = st.map((s) => (s ? s[k] : null)); const d = (a, b) => (f === 'pct' ? F(`=IF(OR(${a}${r}="",${b}${r}=""),"-",${a}${r}-${b}${r})`) : F(`=IFERROR(${a}${r}/${b}${r}-1,"-")`));
