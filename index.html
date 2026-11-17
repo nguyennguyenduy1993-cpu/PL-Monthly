@@ -205,6 +205,22 @@ td.pre{white-space:pre-line}.mut{color:var(--mut,#6B7178)}.sm{font-size:11px}
 .dm tr.tot td:first-child,.dm tr.tot td{background:#F3F5F8}.dm tr.on td:first-child{background:#EEF3FB}
 .card.tw.dm{padding:0}.dm table{margin:0}.dm thead th{box-shadow:inset 0 -1px 0 #E3E3DE}
 .dm td:first-child,.dm th:first-child{box-shadow:inset -1px 0 0 #ECECE8}
+.dpick{min-width:170px;text-align:left;cursor:pointer}
+.calpop{position:absolute;z-index:120;background:#fff;border:1px solid #E3E3DE;border-radius:12px;box-shadow:0 16px 40px rgba(0,0,0,.18);padding:12px 14px;width:560px;max-width:calc(100vw - 16px)}
+.calhd{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.calm{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.cmh{font-weight:700;text-align:center;margin-bottom:6px}
+.cmg{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.cmg .dw{font-size:10px;color:var(--mut2,#9A9EA4);text-align:center;padding:2px 0}
+.cmg button{border:0;background:transparent;padding:6px 0;border-radius:6px;font:inherit;font-size:12px;cursor:pointer}
+.cmg button.ok{font-weight:600;color:var(--ink)}.cmg button.no{color:#C8CBD0;cursor:default}.cmg button.we.ok{color:#B4462E}
+.cmg button.ok:hover{background:#EEF3FB}.cmg button.in{background:#E3ECF9}.cmg button.end{background:var(--blue);color:#fff!important}
+.calps{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 8px;padding-top:10px;border-top:1px solid #EFEFEA}
+.calft{display:flex;justify-content:space-between;align-items:center}
+@media(max-width:620px){.calm{grid-template-columns:1fr}.calm .cm1:first-child{display:none}}
+.cmg button.end,.cmg button.end:hover{background:var(--blue);color:#fff!important}
+.calpop.one{width:290px}.calpop.one .calhd b{font-size:13px}.dpick{min-width:120px}
+.calsel{display:flex;align-items:center;gap:6px}.calsel select{font:inherit;font-size:13px;font-weight:600;border:1px solid #E3E3DE;border-radius:6px;padding:3px 6px;background:#fff}
 </style>
 </head>
 <body>
@@ -214,7 +230,7 @@ td.pre{white-space:pre-line}.mut{color:var(--mut,#6B7178)}.sm{font-size:11px}
   <div class="tabs" id="tabs" role="tablist"></div>
   <div class="sp"></div>
   <div class="ctl ysel0"><label for="yearSel">Năm</label><select id="yearSel" class="sel"></select></div>
-  <div class="ctl dday" hidden><label for="dFrom">Từ</label><select id="dFrom" class="sel"></select><label for="dTo">đến</label><select id="dTo" class="sel"></select></div>
+  <div class="ctl dday" hidden><label for="dFromB">Từ</label><button type="button" class="sel dpick" id="dFromB"></button><label for="dToB">đến</label><button type="button" class="sel dpick" id="dToB"></button></div>
   <div class="ctl dsel"><label for="mFrom">Từ</label><select id="mFrom" class="sel"></select><label for="mTo">đến</label><select id="mTo" class="sel"></select></div>
   <button class="btn" id="bUp" type="button" title="PDF Vista (tháng hoặc ngày), Concession Item Sales, Ops Business Plan, Programming Monthly Report, Daily CO Excel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>Tải dữ liệu</button>
   <button class="btn pri" id="bXls" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v12M7 11l5 5 5-5M5 20h14"/></svg>Excel</button>
@@ -1635,8 +1651,8 @@ function init() {
   const setRange = () => { let a = +$('#mFrom').value, b = +$('#mTo').value; if (a > b) [a, b] = [b, a]; S.months = Array.from({ length: b - a + 1 }, (_, k) => a + k); render(); };
   $('#mFrom').onchange = setRange; $('#mTo').onchange = setRange;
   $('#modes').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; if (b.dataset.m === 'pl' && !window.PLOK) { needLogin(); return; } S.mode = b.dataset.m; localStorage.setItem('plm_mode', S.mode); render(); window.scrollTo(0, 0); };
-  $('#dFrom').onchange = (e) => { S.dfrom = e.target.value; if (S.dfrom > S.dto) S.dto = S.dfrom; render(); };
-  $('#dTo').onchange = (e) => { S.dto = e.target.value; if (S.dfrom > S.dto) S.dfrom = S.dto; render(); };
+  $('#dFromB').onclick = (e) => { e.stopPropagation(); calOpen('from'); };
+  $('#dToB').onclick = (e) => { e.stopPropagation(); calOpen('to'); };
   $('#nav').onclick = (e) => { const a = e.target.closest('a'); if (a) document.getElementById(a.dataset.s)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
   const fu = $('#fUp');
   $('#bUp').onclick = () => fu.click();
@@ -2251,8 +2267,30 @@ function monthTable(c, all, P) {
   body += line(dAgg(c, all), P.single ? 'Tổng tháng' : 'Tổng kỳ', 'tot grp', null);
   return `<div class="card tw dm"><table>${'<thead>' + head + '</thead>'}<tbody>${body}</tbody></table></div>`;
 }
-function fillDaySel(days) { const A = $('#dFrom'), B = $('#dTo'); if (!A || !B) return; A.disabled = B.disabled = !days.length;
-  if (!days.length) { A.innerHTML = B.innerHTML = '<option>Chưa có số</option>'; return; } const o = (cur) => days.slice().reverse().map((d) => `<option value="${d}"${d === cur ? ' selected' : ''}>${dLab(d)}/${d.slice(2, 4)}</option>`).join(''); A.innerHTML = o(S.dfrom); B.innerHTML = o(S.dto); }
+function fillDaySel(days) { const A = $('#dFromB'), B = $('#dToB'); if (!A || !B) return; A.disabled = B.disabled = !days.length; S._ddays = days;
+  if (!days.length) { A.textContent = B.textContent = 'Chưa có số'; return; } A.textContent = `${dLab(S.dfrom)}/${S.dfrom.slice(2, 4)}`; B.textContent = `${dLab(S.dto)}/${S.dto.slice(2, 4)}`; }
+/* 2 ô Từ / Đến, mỗi ô mở 1 lịch để chọn 1 ngày; ngày có số in đậm, ngày chưa có số làm mờ */
+function calOpen(which) {
+  const days = S._ddays || []; if (!days.length) return; const has = new Set(days), last = days[days.length - 1];
+  document.querySelectorAll('.calpop').forEach((x) => x.remove());
+  const pop = document.createElement('div'); pop.className = 'calpop one'; document.body.appendChild(pop);
+  const btn = $(which === 'from' ? '#dFromB' : '#dToB'); const r0 = btn.getBoundingClientRect(); pop.style.top = r0.bottom + window.scrollY + 6 + 'px'; pop.style.left = Math.max(8, Math.min(r0.left, window.innerWidth - 300)) + 'px';
+  const cur = which === 'from' ? S.dfrom : S.dto; let view = cur.slice(0, 7);
+  const ym = (v, k) => { let y = +v.slice(0, 4), m = +v.slice(5, 7) + k; while (m < 1) { m += 12; y--; } while (m > 12) { m -= 12; y++; } return `${y}-${String(m).padStart(2, '0')}`; };
+  const draw = () => { const d1 = view + '-01', n = monthDays(d1).length, off = (dDow(d1) + 6) % 7;
+    let g = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((x) => `<span class="dw">${x}</span>`).join('') + '<span></span>'.repeat(off);
+    for (let i = 1; i <= n; i++) { const d = `${view}-${String(i).padStart(2, '0')}`; const ok = has.has(d) && !(which === 'to' && d < S.dfrom);
+      const cls = [ok ? 'ok' : 'no', d >= S.dfrom && d <= S.dto ? 'in' : '', d === cur ? 'end' : '', dDow(d) === 0 || dDow(d) === 6 ? 'we' : ''].join(' ');
+      g += `<button type="button" class="${cls}" data-d="${d}"${ok ? '' : ' disabled'}>${i}</button>`; }
+    pop.innerHTML = `<div class="calhd"><button type="button" class="btn sm" data-nav="-1">‹</button><span class="calsel"><b>${which === 'from' ? 'Từ' : 'Đến'}</b><select data-mm>${Array.from({ length: 12 }, (_, i) => `<option value="${String(i + 1).padStart(2, '0')}"${i + 1 === +view.slice(5, 7) ? ' selected' : ''}>Tháng ${i + 1}</option>`).join('')}</select><select data-yy>${[...new Set(days.map((x) => x.slice(0, 4)).concat(view.slice(0, 4)))].sort().map((y) => `<option${y === view.slice(0, 4) ? ' selected' : ''}>${y}</option>`).join('')}</select></span><button type="button" class="btn sm" data-nav="1">›</button></div><div class="cmg">${g}</div>
+      ${which === 'to' ? `<div class="calps"><button type="button" class="btn sm" data-q="${last}">Ngày gần nhất</button><button type="button" class="btn sm" data-q="${S.dfrom}">Bằng ngày bắt đầu</button></div>` : `<div class="calps"><button type="button" class="btn sm" data-q="${last}">Ngày gần nhất</button><button type="button" class="btn sm" data-q="${last.slice(0, 8)}01">Đầu tháng</button></div>`}`; };
+  const pick = (d) => { if (which === 'from') { S.dfrom = d; if (S.dto < d) S.dto = d; } else { S.dto = d < S.dfrom ? S.dfrom : d; } pop.remove(); render(); };
+  pop.onchange = (e) => { const m = pop.querySelector('[data-mm]').value, y = pop.querySelector('[data-yy]').value; view = `${y}-${m}`; draw(); };
+  pop.onclick = (e) => { e.stopPropagation(); const t = e.target.closest('button'); if (!t) return; if (t.dataset.nav) { view = ym(view, +t.dataset.nav); draw(); return; }
+    if (t.dataset.d) return pick(t.dataset.d); if (t.dataset.q) { let d = t.dataset.q; if (!has.has(d)) d = days.find((x) => x >= d) || last; pick(d); } };
+  setTimeout(() => document.addEventListener('click', function off(e) { if (!pop.contains(e.target)) { pop.remove(); document.removeEventListener('click', off); } }), 0);
+  draw();
+}
 function dspy() { const links = [...document.querySelectorAll('.nav a')]; const on = () => { let cur = DSECS[0][0]; DSECS.forEach(([id]) => { const e = document.getElementById(id); if (e && e.getBoundingClientRect().top < 140) cur = id; }); links.forEach((a) => a.classList.toggle('on', a.dataset.s === cur)); }; window.onscroll = on; on(); }
 
 function ophModal() {
