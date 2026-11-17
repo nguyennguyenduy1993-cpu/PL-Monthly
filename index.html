@@ -779,6 +779,7 @@ const dcell = (kind, a, b) => { const v = delta(kind, a, b); return `<td class="
 /* ---------- điểm cần lưu ý theo từng hạng mục (dùng trên trang + Excel) ---------- */
 const PROMO = /MOMO|U22|HAPPY|ZALO|ZGRS|MERCHANT|SAU 22H|TRI AN|HSSV/i;
 function sectionNotes(c, P, V) {
+  S._extraDone = false;
   const N = { overall: [], market: [], film: [], ticket: [], coclass: [], coitems: [], opex: [] };
   const { cur, ly, bp } = P; if (!cur) return N; const st = SEED.std[c] || {}; const n = P.M.length;
   const add = (s, lv, text, action) => N[s].push({ lv, text, action: action || '' });
@@ -857,11 +858,33 @@ function sectionNotes(c, P, V) {
         add('coclass', 'flat', `Combo sale ${f0(g.total)} nghìn đ: Extra ${pc(ex)}, Standard ${pc(g.standard / g.total)}, U22 ${pc(u)}, Group ${pc(gr)}.`);
         const bC = Y.ly ? { o: Y.ly, y: P.y - 1, lab: 'cùng kỳ' } : Y.lm ? { o: Y.lm, y: P.prevPairs[0][0], lab: 'last month' } : null;
         if (bC) { const a0 = ad(Y.cur, P.y), a1 = ad(bC.o, bC.y); const GL = [['Extra', 'extra'], ['Standard', 'standard'], ['U22', 'u22'], ['Group', 'group']];
-          const ds = GL.map(([l, k]) => [l, g[k] / a0, bC.o.combo[k] / a1]).filter(([, x, y2]) => fin(x) && fin(y2) && y2 > 0).map(([l, x, y2]) => [l, x, x / y2 - 1]);
+          const ds = GL.map(([l, k]) => [l, g[k] / a0, bC.o.combo[k] / a1]).filter(([, x, y2]) => fin(x) && fin(y2) && y2 > 0).map(([l, x, y2]) => [l, x, x / y2 - 1, y2]);
           const up = ds.filter((d) => d[2] > 0.02), dn = ds.filter((d) => d[2] < -0.02);
-          if (up.length) add('coclass', 'good', `Combo tăng (SPP so với ${bC.lab}): ${up.map(([l, x, d]) => `${l} ${fR(x)} (${dp(d)})`).join(', ')}.`);
-          if (dn.length) add('coclass', 'bad', `Combo giảm (SPP so với ${bC.lab}): ${dn.map(([l, x, d]) => `${l} ${fR(x)} (${dp(d)})`).join(', ')}.`, dn.some((d) => d[0] === 'Extra') ? 'Nhắc quầy chào combo Extra trước, kiểm tra tồn ly/bắp size Extra.' : 'Rà chương trình combo nhóm và U22 theo lịch phim.');
-          const exB = bC.o.combo.extra / bC.o.combo.total; if (fin(exB)) add('coclass', ex >= exB ? 'good' : 'warn', `Tỷ lệ Extra trong combo ${pc(ex)}, ${dpt(ex - exB)} so với ${bC.lab}.`, ex < exB ? 'Tỷ lệ nâng lên Extra giảm: kiểm tra lại kịch bản upsell tại quầy.' : ''); }
+          const lb = ([l, x, d, y2]) => (y2 < 0.3 ? `${l} ${fR(y2)} → ${fR(x)}` : `${l} ${fR(x)} (${dp(d)})`); // nền quá nhỏ thì ghi từ → đến, không ghi %
+          if (up.length) add('coclass', 'good', `Combo tăng (SPP so với ${bC.lab}): ${up.map(lb).join(', ')}.`);
+          if (dn.length) add('coclass', 'bad', `Combo giảm (SPP so với ${bC.lab}): ${dn.map(lb).join(', ')}.`, dn.some((d) => d[0] === 'Extra') ? 'Nhắc quầy chào combo Extra trước, kiểm tra tồn ly/bắp size Extra.' : 'Rà chương trình combo nhóm và U22 theo lịch phim.');
+          // Extra giảm do kênh bán (online tăng) hay do quầy mời chào kém đi? tách theo kênh
+          const XB = bC.y === P.y - 1 ? X.ly : X.lm;
+          const chan = (o) => { const r2 = { c: 0, cx: 0, o: 0, ox: 0 }; o.items.forEach((it) => { const e = comboGroup(it.item) === 'extra'; if (it.cls === 'CO Combo') { r2.c += it.net; if (e) r2.cx += it.net; } else if (it.cls === 'CO Online') { r2.o += it.net; if (e) r2.ox += it.net; } }); return r2; };
+          const k1 = chan(Y.cur), k0 = chan(bC.o); const rc1 = k1.cx / k1.c, rc0 = k0.cx / k0.c, ro1 = k1.ox / k1.o, ro0 = k0.ox / k0.o, wo1 = k1.o / (k1.c + k1.o), wo0 = k0.o / (k0.c + k0.o);
+          if ([rc1, rc0, ro1, ro0, wo1, wo0].every(fin)) {
+            const mixEff = (wo1 - wo0) * (ro0 - rc0), rateEff = (1 - wo1) * (rc1 - rc0) + wo1 * (ro1 - ro0), tot = mixEff + rateEff;
+            const offA = (v) => (v ? (v.channel.find((q) => q.channel === 'POS') || {}).adm : null), onA = (v) => (v ? (v.channel.find((q) => q.channel === 'Online') || {}).adm : null);
+            const oa1 = offA(X.cur), oa0 = offA(XB), na1 = onA(X.cur), na0 = onA(XB);
+            const facts = `Combo online chiếm ${pc(wo1)} doanh thu combo (${dpt(wo1 - wo0)} so với ${bC.lab})${fin(na1) && fin(na0) ? `, vé online ${pc(na1 / (na1 + oa1))} admit (${dpt(na1 / (na1 + oa1) - na0 / (na0 + oa0))})` : ''}. Tỷ lệ Extra: tại quầy ${pc(rc1)} (${dpt(rc1 - rc0)}), online ${pc(ro1)} (${dpt(ro1 - ro0)}).`;
+            add('coclass', 'flat', facts);
+            if (Math.abs(tot) >= 0.005) {
+              const why = `Tỷ lệ Extra trong combo ${dpt(tot)} so với ${bC.lab}: do dịch chuyển sang kênh online ${dpt(mixEff)}, do tỷ lệ Extra trong từng kênh thay đổi ${dpt(rateEff)} (quầy ${dpt((1 - wo1) * (rc1 - rc0))}, online ${dpt(wo1 * (ro1 - ro0))}).`;
+              const counterWeak = rc1 - rc0 < -0.02, mixDriven = tot < 0 && Math.abs(mixEff) > Math.abs(rateEff);
+              const acts = [];
+              if (mixEff < -0.01) acts.push(`Phần do khách chuyển sang mua online (${dpt(mixEff)}) không phải lỗi mời chào tại quầy: online chỉ ${pc(ro1)} chọn Extra so với ${pc(rc1)} tại quầy. Đề xuất HO/Marketing đặt Extra làm lựa chọn mặc định hoặc ưu đãi nâng size trên app/web.`);
+              if (counterWeak) acts.push(`Phần tại quầy (${dpt((1 - wo1) * (rc1 - rc0))}) là phần nhân viên kiểm soát được: kiểm tra kịch bản mời chào Extra, giám sát ca cao điểm, đối chiếu theo từng nhân viên quầy.`);
+              add('coclass', counterWeak ? 'bad' : mixDriven ? 'warn' : 'flat', why, acts.join(' '));
+              S._extraDone = true;
+              if (fin(oa1) && fin(oa0) && oa1 && oa0) { const sp1 = k1.c / oa1, sp0 = k0.c / oa0; add('coclass', sp1 >= sp0 ? 'good' : 'bad', `Combo bán tại quầy / khách mua vé tại quầy (chỉ số tham khảo, khách mua vé online vẫn có thể mua combo tại quầy): ${fR(sp1)} nghìn đ (${dp(ch(sp1, sp0))} so với ${bC.lab}).`, sp1 < sp0 ? 'Khách mua vé tại quầy chi cho combo ít hơn: rà lại việc mời chào combo ngay tại quầy vé.' : ''); }
+            }
+          }
+          const exB = bC.o.combo.extra / bC.o.combo.total; if (fin(exB) && !S._extraDone) add('coclass', ex >= exB ? 'good' : 'warn', `Tỷ lệ Extra trong combo ${pc(ex)}, ${dpt(ex - exB)} so với ${bC.lab}.`, ex < exB ? 'Tỷ lệ nâng lên Extra giảm: kiểm tra lại kịch bản upsell tại quầy.' : ''); }
         else if (ex < 0.35) add('coclass', 'warn', `Extra chỉ chiếm ${pc(ex)} doanh thu combo, Standard ${pc(g.standard / g.total)}.`, 'Đẩy upsell từ Standard lên Extra tại quầy và trên app.'); } } }
   // Top 10 CO
   if (V && V.combos.length) { const T = V.co_net; const s10 = V.combos.slice(0, 10).reduce((s, x) => s + x.net, 0); add('coitems', 'flat', `Top 10 combo chiếm ${pc(s10 / T)} doanh thu F&B; ${V.combos[0].item} dẫn đầu ${f1(V.combos[0].net)} triệu.`);
