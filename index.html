@@ -236,7 +236,7 @@ td.pre{white-space:pre-line}.mut{color:var(--mut,#6B7178)}.sm{font-size:11px}
   <button class="btn pri" id="bXls" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v12M7 11l5 5 5-5M5 20h14"/></svg>Excel</button>
   <input type="file" id="fUp" accept=".pdf,.xlsx" multiple hidden>
  </div>
- <div class="navrow"><nav class="nav" id="nav"></nav><button class="btn sm" id="bOut" type="button"><span></span></button><button class="btn sm" id="bData" type="button" title="Dữ liệu & Firebase" aria-label="Dữ liệu và Firebase"><span class="dot" id="fbDot"></span>Dữ liệu<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></button></div>
+ <div class="navrow"><nav class="nav" id="nav"></nav><button class="btn sm" id="bOut" type="button"><span></span></button><button class="btn sm" id="bData" type="button" aria-label="Dữ liệu và Firebase"><span class="dot" id="fbDot"></span>Dữ liệu<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></button></div>
 </div>
 <main id="main"></main>
 <script>
@@ -1504,7 +1504,7 @@ async function fbConnect() {
       S.up = { vista: v.vista || {}, bp: v.bp || {}, market: v.market || {}, hc: v.hc || {}, plan: v.plan || {}, cs: v.cs || {}, opex: v.opex || {}, opexnote: v.opexnote || {}, dxl: v.dxl || {}, dmk: v.dmk || {}, dcs: v.dcs || {}, doph: v.doph || {} };
       // dữ liệu tải lên mà chưa ghi được lên Firebase: giữ lại, không để bản trên Firebase xóa mất, rồi ghi lại
       const pend = pendGet(); let n = 0; Object.entries(pend).forEach(([k, o]) => Object.entries(o).forEach(([key, val]) => { S.up[k][key] = val; n++; }));
-      saveCache(); fillYears(); render(); setDot(n ? 'off' : 'ok', n ? `Còn ${n} mục chưa lên Firebase` : 'Đã đồng bộ Firebase');
+      saveCache(); fillYears(); render(); setDot(n ? 'off' : 'ok', n ? `Còn ${n} mục chưa lên Firebase` : '');
       if (n && !S._retry) { S._retry = true; setTimeout(async () => { for (const [k, o] of Object.entries(pend)) await persist(k, o); S._retry = false; }, 500); } },
       (err) => { S.fbErr = err.message; setDot('off', 'Firebase lỗi: ' + err.message); });
   } catch (e) { S.fbErr = e.message; setDot('off', 'Firebase lỗi: ' + e.message); }
@@ -1512,7 +1512,7 @@ async function fbConnect() {
 const PEND = 'plm_pending';
 const pendGet = () => { try { return JSON.parse(localStorage.getItem(PEND) || '{}'); } catch (e) { return {}; } };
 const pendSet = (o) => { try { localStorage.setItem(PEND, JSON.stringify(o)); } catch (e) {} };
-function setDot(cls, t) { const d = $('#fbDot'); if (d) { d.className = 'dot ' + cls; d.parentElement.title = t; } }
+function setDot(cls) { const d = $('#fbDot'); if (d) { d.className = 'dot ' + cls; d.parentElement.removeAttribute('title'); } } // chỉ đổi màu chấm, không hiện chữ trạng thái
 async function persist(kind, obj) { // obj: {key: value}; trả về true nếu đã lên Firebase
   Object.assign(S.up[kind], obj); saveCache();
   const pend = pendGet();
