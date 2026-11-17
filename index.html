@@ -1247,7 +1247,7 @@ function comboShift(P, Y) {
   const impT = rows.reduce((s, x) => s + (x.imp || 0), 0);
   const tot = `<tr class="tot"><td>Tổng</td><td></td><td>${f0(M1.Q)}</td><td>100.0%</td><td>${M0 ? f0(M0.Q) : '–'}</td><td>${M0 ? '100.0%' : '–'}</td><td>${M0 ? '0.0%' : '–'}</td><td>${fR(M1.N / M1.Q)}</td><td>${M0 ? fR(M0.N / M0.Q) : '–'}</td>${M0 ? dcell('num', M1.N / M1.Q, M0.N / M0.Q) : '<td>–</td>'}<td class="${tone('num', impT)}">${M0 ? fR(impT) : '–'}</td></tr>`;
   const det = CT.map(([k, l]) => { const its = Y.cur.items.filter((it) => (it.cls === 'CO Combo' || (it.cls === 'CO Online' && /combo/i.test(it.item))) && comboGroup(it.item) === k); return `<div><b>${esc(l)}</b>: ${its.map((it) => esc(it.item)).join(', ') || '–'}</div>`; }).join('');
-  return `<div class="ct sub">Dịch chuyển cơ cấu combo</div><div class="card tw"><table><thead><tr><th class="t">Loại</th><th class="t">Kênh</th><th>This Month</th><th>% số phần</th><th>${base ? base.lab : 'Kỳ so sánh'}</th><th>% số phần</th><th>±</th><th>Giá/phần ${P.y}</th><th>Giá/phần ${base && base.lab === 'Last Year' ? P.y - 1 : 'Last Month'}</th><th>% giá</th><th>Tác động lên giá BQ</th></tr></thead><tbody>${tr}${tot}</tbody></table>
+  return `<div class="ct sub">Dịch chuyển cơ cấu combo</div><div class="card tw"><table><thead><tr><th class="t">Loại</th><th class="t">Kênh</th><th>This Month</th><th>% số phần</th><th>${base ? base.lab : 'Kỳ so sánh'}</th><th>% số phần</th><th>±</th><th>Giá/phần ${P.y}</th><th>Giá/phần ${base && base.lab === 'Last Year' ? P.y - 1 : 'Last Month'}</th><th>% giá</th><th>Tác động cơ cấu lên giá BQ</th></tr></thead><tbody>${tr}${tot}</tbody></table>
     <details class="cls-map"><summary>Món được xếp vào từng loại combo (kỳ này)</summary>${det}</details></div>`;
 }
 
@@ -1324,8 +1324,9 @@ function opex(P) {
   // monthly cost table grouped
   const ML = [['a. Payroll', 'payroll', 1], ['Payroll for Manager', 'payroll_mgm'], ['Lương phụ trội MGM', 'ot_mgm', 3], ['Payroll for cinema staff', 'payroll_staff'], ['Lương phụ trội staff', 'ot_staff', 3], ['b. Stationary', 'stationery_total', 1], ['c. Utilities', 'utilities', 1], ['Electricity and power', 'electricity'], ['Chỉ số điện (kWh)', 'elec_index', 4], ['kWh / Operation Hour', 'elec_ph', 5], ['Cleaning (dịch vụ & DCVS)', 'cleaning'], ['Care', 'care'], ['Others', 'others'], ['Controllable Cost', 'ctrl', 2]];
   const recs = Array.from({ length: 12 }, (_, i) => agg(P.c, P.y, [i + 1]));
-  const yc = P.ytd, yl = P.ytdLy; const okv = (o, f) => o && fin(o[f]) && !(['ctrl', 'payroll'].includes(f) && o.payroll_gap) ? Math.abs(o[f]) : null;
-  const mt = `<div class="card tw" style="margin-top:12px"><div class="ct">Chi phí theo tháng ${P.y}</div><table><thead><tr><th>Hạng mục</th>${recs.map((x, i) => `<th class="${P.M.includes(i + 1) ? 'on' : ''}">${mlab(i + 1)}</th>`).join('')}<th class="sep">YTD</th><th>YTD LY</th><th>vs LY</th></tr></thead><tbody>${ML.map(([l, f, t]) => { const fm = t === 5 ? fR : f0; const ok = (x) => x && fin(x[f]) && !(f === 'ctrl' && x.payroll_gap); return `<tr class="${t === 2 ? 'tot' : t === 1 ? 'grp b' : t >= 3 ? 'l2' : 'l1'}"><td>${l}</td>${recs.map((x) => `<td>${ok(x) ? fm(Math.abs(x[f])) : '–'}</td>`).join('')}<td class="sep">${t === 5 ? fR(yc && yc.elec_ph) : fm(okv(yc, f))}</td><td>${t === 5 ? fR(yl && yl.elec_ph) : fm(okv(yl, f))}</td><td class="${tone('cost', ch(t === 5 ? yc && yc.elec_ph : okv(yc, f), t === 5 ? yl && yl.elec_ph : okv(yl, f)))}">${dp(ch(t === 5 ? yc && yc.elec_ph : okv(yc, f), t === 5 ? yl && yl.elec_ph : okv(yl, f)))}</td></tr>`; }).join('')}</tbody></table></div>`;
+  const yc = P.ytd, yl = P.ytdLy; const BPF = new Set(['payroll', 'payroll_mgm', 'payroll_staff', 'stationery_total', 'utilities', 'electricity', 'cleaning', 'drinking', 'others', 'ctrl']); const bv = (f) => (P.bpY && BPF.has(f) && fin(P.bpY[f]) ? Math.abs(P.bpY[f]) : null);
+  const okv = (o, f) => o && fin(o[f]) && !(['ctrl', 'payroll'].includes(f) && o.payroll_gap) ? Math.abs(o[f]) : null;
+  const mt = `<div class="card tw" style="margin-top:12px"><div class="ct">Chi phí theo tháng ${P.y}</div><table><thead><tr><th>Hạng mục</th>${recs.map((x, i) => `<th class="${P.M.includes(i + 1) ? 'on' : ''}">${mlab(i + 1)}</th>`).join('')}<th class="sep">YTD</th><th>YTD BP</th><th>vs BP</th><th>YTD LY</th><th>vs LY</th></tr></thead><tbody>${ML.map(([l, f, t]) => { const fm = t === 5 ? fR : f0; const ok = (x) => x && fin(x[f]) && !(f === 'ctrl' && x.payroll_gap); return `<tr class="${t === 2 ? 'tot' : t === 1 ? 'grp b' : t >= 3 ? 'l2' : 'l1'}"><td>${l}</td>${recs.map((x) => `<td>${ok(x) ? fm(Math.abs(x[f])) : '–'}</td>`).join('')}<td class="sep">${t === 5 ? fR(yc && yc.elec_ph) : fm(okv(yc, f))}</td><td>${fm(bv(f))}</td><td class="${tone('cost', t === 5 ? null : ch(okv(yc, f), bv(f)))}">${t === 5 ? '–' : dp(ch(okv(yc, f), bv(f)))}</td><td>${t === 5 ? fR(yl && yl.elec_ph) : fm(okv(yl, f))}</td><td class="${tone('cost', ch(t === 5 ? yc && yc.elec_ph : okv(yc, f), t === 5 ? yl && yl.elec_ph : okv(yl, f)))}">${dp(ch(t === 5 ? yc && yc.elec_ph : okv(yc, f), t === 5 ? yl && yl.elec_ph : okv(yl, f)))}</td></tr>`; }).join('')}</tbody></table></div>`;
   return `${t1}${band}${mt}`;
 }
 
@@ -1726,11 +1727,12 @@ function extras(sh, ci, P, V, VL, S0) {
   // Chi phí theo tháng
   sec(`Chi phí theo tháng ${P.y} (triệu VND)`);
   const mx = Math.max(...P.M), recs = Array.from({ length: 12 }, (_, i) => agg(c, P.y, [i + 1])), ly = P.ytdLy;
-  head(['Hạng mục', ...Array.from({ length: 12 }, (_, i) => mlab(i + 1)), `YTD ${mlab(1)}–${mlab(mx)}`, 'YTD LY', 'vs LY']);
+  head(['Hạng mục', ...Array.from({ length: 12 }, (_, i) => mlab(i + 1)), `YTD ${mlab(1)}–${mlab(mx)}`, 'YTD BP', 'vs BP', 'YTD LY', 'vs LY']);
   const LE = colLet(2 + mx);
   const ML = [['Payroll', 'payroll', 1], ['Payroll for Manager', 'payroll_mgm'], ['Lương phụ trội MGM', 'ot_mgm'], ['Payroll for cinema staff', 'payroll_staff'], ['Lương phụ trội staff', 'ot_staff'], ['Stationary', 'stationery_total', 1], ['Utilities', 'utilities', 1], ['Electricity and power', 'electricity'], ['Electricity index (kWh)', 'elec_index', 0, 'int'], ['Operation Hour', 'op_hour', 0, 'int'], ['Cleaning (dịch vụ & DCVS)', 'cleaning'], ['Care', 'care'], ['Others', 'others'], ['kWh thấp điểm', 'kwh_low', 0, 'int'], ['kWh trung điểm', 'kwh_mid', 0, 'int'], ['kWh cao điểm', 'kwh_peak', 0, 'int']];
   ML.forEach(([l, f, b, fmt]) => { const ab = (o) => (o && fin(o[f]) && o[f] !== 0 && !(['payroll', 'payroll_mgm', 'payroll_staff'].includes(f) && o.payroll_gap) ? Math.abs(o[f]) : null); const ty = fmt || 'int';
-    row([l, ...recs.map(ab), F(`=IF(COUNT(C${r}:${LE}${r})=0,"",SUM(C${r}:${LE}${r}))`), ab(ly), F(`=IFERROR(O${r}/P${r}-1,"-")`)], [...Array(13).fill(ty), ty, 'pct'], !!b); });
+    const BPF = ['payroll', 'payroll_mgm', 'payroll_staff', 'stationery_total', 'utilities', 'electricity', 'cleaning', 'drinking', 'others']; const bpv = BPF.includes(f) && P.bpY && fin(P.bpY[f]) ? Math.abs(P.bpY[f]) : null;
+    row([l, ...recs.map(ab), F(`=IF(COUNT(C${r}:${LE}${r})=0,"",SUM(C${r}:${LE}${r}))`), bpv, bpv != null ? F(`=IFERROR(O${r}/P${r}-1,"-")`) : null, ab(ly), F(`=IFERROR(O${r}/R${r}-1,"-")`)], [...Array(13).fill(ty), ty, 'pct', ty, 'pct'], !!b); });
   row(['Tổng kWh theo khung giờ', ...Array.from({ length: 12 }, (_, i) => F(`=IF(COUNT(${colLet(3 + i)}${r - 3}:${colLet(3 + i)}${r - 1})=0,"",SUM(${colLet(3 + i)}${r - 3}:${colLet(3 + i)}${r - 1}))`)), F(`=IF(COUNT(C${r}:${LE}${r})=0,"",SUM(C${r}:${LE}${r}))`)], Array(13).fill('int'), true);
   r++; NT.opex.forEach((f) => noteRow(f)); r += 2;
   // Điểm cần lưu ý chung
@@ -1796,7 +1798,7 @@ function logout() { location.reload(); }
 function lockScreen() {
   const roles = [...new Set(ACCOUNTS.map((a) => a.role))];
   const el = document.createElement('div'); el.className = 'lock';
-  el.innerHTML = `<form class="lbox" autocomplete="on"><div class="lbrand">P&L Monthly</div><div class="lsub">Galaxy Cinema · Cinema Monthly P&L</div>
+  el.innerHTML = `<form class="lbox" autocomplete="on"><div class="lbrand">P&L Monthly</div>
     <label>Vai trò<select id="lRole">${roles.map((r) => `<option value="${r}">${esc(ACCOUNTS.find((a) => a.role === r).label)}</option>`).join('')}</select></label>
     <label>Tài khoản<input id="lUser" name="username" autocomplete="username" required></label>
     <label>Mật khẩu<input id="lPass" name="password" type="password" autocomplete="current-password" required></label>
