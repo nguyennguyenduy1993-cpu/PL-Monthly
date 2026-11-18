@@ -221,6 +221,8 @@ td.pre{white-space:pre-line}.mut{color:var(--mut,#6B7178)}.sm{font-size:11px}
 .cmg button.end,.cmg button.end:hover{background:var(--blue);color:#fff!important}
 .calpop.one{width:290px}.calpop.one .calhd b{font-size:13px}.dpick{min-width:120px}
 .calsel{display:flex;align-items:center;gap:6px}.calsel select{font:inherit;font-size:13px;font-weight:600;border:1px solid #E3E3DE;border-radius:6px;padding:3px 6px;background:#fff}
+.upsum{margin-top:12px;padding:10px 12px;border:1px solid #E3E3DE;border-radius:8px;background:#FAFAF8;font-size:12.5px;display:grid;gap:8px;line-height:1.5}
+.upsum .ow{display:flex;align-items:center;gap:6px;margin-top:4px;font-weight:600}
 </style>
 </head>
 <body>
@@ -1488,9 +1490,19 @@ function loadJS(src) { return (loaded[src] = loaded[src] || new Promise((ok, no)
 function toast(t, ms = 2600) { const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), ms); }
 function modal(html) { const m = document.createElement('div'); m.className = 'modal'; m.innerHTML = `<div class="mbox">${html}</div>`; m.addEventListener('click', (e) => { if (e.target === m || e.target.closest('[data-close]')) m.remove(); }); document.body.appendChild(m); return m; }
 
-/* ---------- local cache ---------- */
-function saveCache() { try { localStorage.setItem('plm_cache', JSON.stringify(S.up)); } catch (e) { console.warn(e); } }
-function loadCache() { try { const c = JSON.parse(localStorage.getItem('plm_cache') || 'null'); if (c) S.up = { vista: c.vista || {}, bp: c.bp || {}, market: c.market || {}, hc: c.hc || {}, plan: c.plan || {}, cs: c.cs || {}, opex: c.opex || {}, opexnote: c.opexnote || {}, dxl: c.dxl || {}, dmk: c.dmk || {}, dcs: c.dcs || {}, doph: c.doph || {} }; } catch (e) {} }
+/* ---------- lưu trên máy: IndexedDB (dung lượng lớn), localStorage dự phòng ---------- */
+const STORES = ['vista', 'bp', 'market', 'hc', 'plan', 'cs', 'opex', 'opexnote', 'dxl', 'dmk', 'dcs', 'doph'];
+const upNorm = (c) => Object.fromEntries(STORES.map((k) => [k, (c && c[k]) || {}]));
+const IDB = (() => { let dbp = null; const open = () => (dbp = dbp || new Promise((ok, no) => { try { const r = indexedDB.open('plm', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error); } catch (e) { no(e); } }));
+  const tx = (mode, fn) => open().then((db) => new Promise((ok, no) => { const t = db.transaction('kv', mode); const st = t.objectStore('kv'); const q = fn(st); t.oncomplete = () => ok(q && q.result); t.onerror = () => no(t.error); }));
+  return { get: (k) => tx('readonly', (st) => st.get(k)).catch(() => null), set: (k, v) => tx('readwrite', (st) => st.put(v, k)).catch((e) => console.warn('IDB', e)) }; })();
+let _cacheT = null;
+function saveCache() { clearTimeout(_cacheT); _cacheT = setTimeout(() => { IDB.set('cache', JSON.parse(JSON.stringify(S.up))); try { localStorage.removeItem('plm_cache'); } catch (e) {} }, 300); }
+async function loadCache() {
+  let c = await IDB.get('cache'); if (!c) { try { c = JSON.parse(localStorage.getItem('plm_cache') || 'null'); } catch (e) {} }
+  if (c) S.up = upNorm(c);
+  let p = await IDB.get('pending'); if (!p) { try { p = JSON.parse(localStorage.getItem(PEND) || 'null'); } catch (e) {} } S._pend = p || {}; IDB.set('pending', S._pend);
+}
 
 /* ---------- Firebase ---------- */
 async function fbConnect() {
@@ -1501,22 +1513,30 @@ async function fbConnect() {
     try { await firebase.auth().signInAnonymously(); } catch (e) { console.warn('Anonymous auth chưa bật:', e.message); }
     const ref = firebase.database().ref(FB_ROOT); S.fb = ref;
     ref.on('value', (snap) => { const v = snap.val() || {}; S.fbErr = null;
-      S.up = { vista: v.vista || {}, bp: v.bp || {}, market: v.market || {}, hc: v.hc || {}, plan: v.plan || {}, cs: v.cs || {}, opex: v.opex || {}, opexnote: v.opexnote || {}, dxl: v.dxl || {}, dmk: v.dmk || {}, dcs: v.dcs || {}, doph: v.doph || {} };
+      S.up = upNorm(fbDec(v));
       // dữ liệu tải lên mà chưa ghi được lên Firebase: giữ lại, không để bản trên Firebase xóa mất, rồi ghi lại
       const pend = pendGet(); let n = 0; Object.entries(pend).forEach(([k, o]) => Object.entries(o).forEach(([key, val]) => { S.up[k][key] = val; n++; }));
       saveCache(); fillYears(); render(); setDot(n ? 'off' : 'ok', n ? `Còn ${n} mục chưa lên Firebase` : '');
+      if (!S._retryT) S._retryT = setInterval(async () => { const pd = pendGet(); if (!Object.keys(pd).length || S._retry) return; S._retry = true; try { for (const [k, o] of Object.entries(pd)) await persist(k, o); } finally { S._retry = false; } setDot(Object.keys(pendGet()).length ? 'off' : 'ok'); }, 60000);
       if (n && !S._retry) { S._retry = true; setTimeout(async () => { for (const [k, o] of Object.entries(pend)) await persist(k, o); S._retry = false; }, 500); } },
       (err) => { S.fbErr = err.message; setDot('off', 'Firebase lỗi: ' + err.message); });
   } catch (e) { S.fbErr = e.message; setDot('off', 'Firebase lỗi: ' + e.message); }
 }
 const PEND = 'plm_pending';
-const pendGet = () => { try { return JSON.parse(localStorage.getItem(PEND) || '{}'); } catch (e) { return {}; } };
-const pendSet = (o) => { try { localStorage.setItem(PEND, JSON.stringify(o)); } catch (e) {} };
+// Firebase không cho key có . # $ / [ ] → mã hóa khi ghi, giải mã khi đọc
+const fbKey = (k) => String(k).replace(/[%.#$/\[\]]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+const fbUnkey = (k) => (k.includes('%') ? k.replace(/%(25|2E|23|24|2F|5B|5D)/g, (_, h) => String.fromCharCode(parseInt(h, 16))) : k);
+const fbEnc = (v) => (Array.isArray(v) ? v.map(fbEnc) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [fbKey(k), fbEnc(x)])) : v);
+const fbDec = (v) => (Array.isArray(v) ? v.map(fbDec) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [fbUnkey(k), fbDec(x)])) : v);
+// mạng chậm/mất: không treo màn hình lưu; quá 20 giây thì giữ vào hàng chờ và ghi lại sau
+const fbWait = (p) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error('Firebase không phản hồi')), 20000))]);
+const pendGet = () => JSON.parse(JSON.stringify(S._pend || {}));
+const pendSet = (o) => { S._pend = o; IDB.set('pending', JSON.parse(JSON.stringify(o))); try { localStorage.removeItem(PEND); } catch (e) {} };
 function setDot(cls) { const d = $('#fbDot'); if (d) { d.className = 'dot ' + cls; d.parentElement.removeAttribute('title'); } } // chỉ đổi màu chấm, không hiện chữ trạng thái
 async function persist(kind, obj) { // obj: {key: value}; trả về true nếu đã lên Firebase
   Object.assign(S.up[kind], obj); saveCache();
   const pend = pendGet();
-  if (S.fb) { try { const upd = {}; Object.entries(obj).forEach(([k, v]) => (upd[`${kind}/${k}`] = JSON.parse(JSON.stringify(v)))); await S.fb.update(upd);
+  if (S.fb) { try { const ent = Object.entries(obj); for (let i = 0; i < ent.length; i += 150) { const upd = {}; ent.slice(i, i + 150).forEach(([k, v]) => (upd[`${kind}/${fbKey(k)}`] = v == null ? null : fbEnc(JSON.parse(JSON.stringify(v))))); await fbWait(S.fb.update(upd)); }
       if (pend[kind]) { Object.keys(obj).forEach((k) => delete pend[kind][k]); if (!Object.keys(pend[kind]).length) delete pend[kind]; pendSet(pend); } return true; }
     catch (e) { S.fbErr = e.message; } }
   pend[kind] = Object.assign(pend[kind] || {}, obj); pendSet(pend); return false;
@@ -1553,26 +1573,26 @@ async function uploadAny(files) {
           if (isDaily(x) || S.mode === 'daily') { r.type = 'PDF Concession Sales (ngày)'; const er = dCheck(x); if (er) { r.check = er; res.push(r); continue; } const d = isoPad(x.from); const cc = coCounts(x.items);
             r.what = `${x.cinema || x.cinemaName || '?'} · ${dLab(d)}/${d.slice(0, 4)} · ${x.items.length} món · CB Online ${f0(cc['CB Online'])} · CB1 ${f0(cc.CB1)} · CB1Ex ${f0(cc.CB1Ex)} · CB2 ${f0(cc.CB2)} · CB2Ex ${f0(cc.CB2Ex)} · Drink ${f0(cc.Drink)} · Pop ${f0(cc.Pop)}`;
             if (!x.cinema) x.warnings.push('Không nhận ra rạp: ' + (x.cinemaName || '?')); r.ok = !!(x.cinema && d && x.items.length); r.check = x.warnings.join('; ');
-            if (r.ok) { const k = DK(x.cinema, d); if (dGet('dcs', k)) r.note = 'Ghi đè bản cũ'; save.dcs[k] = { file: f.name, uploadedAt: x.uploadedAt, items: x.items.map((i) => [i.cls, i.item, i.qty, i.net]), total: x.total ? x.total.net : null }; }
+            if (r.ok) { const k = DK(x.cinema, d); save.dcs[k] = { file: f.name, uploadedAt: x.uploadedAt, items: x.items.map((i) => [i.cls, i.item, i.qty, i.net]), total: x.total ? x.total.net : null }; }
             res.push(r); continue; }
           const g = {}; x.items.filter((it) => /^CO (Combo|Online)$/.test(it.cls)).forEach((it) => (g[comboGroup(it.item)] = (g[comboGroup(it.item)] || 0) + it.net));
           r.what = `${x.cinema || x.cinemaName || '?'} · ${x.month ? mlab(x.month) + '/' + x.year : '?'} · ${x.items.length} món · Net ${f0(x.total ? x.total.net : null)} · Extra ${f0(g.extra)} · Standard ${f0(g.standard)} · U22 ${f0(g.u22)} · Group ${f0(g.group)}`;
           if (!x.cinema) x.warnings.push('Không nhận ra rạp: ' + (x.cinemaName || '?'));
           r.ok = !!(x.cinema && x.year && x.month && x.items.length); r.check = x.warnings.join('; ');
-          if (r.ok) { if (csGet(x.cinema, x.year, x.month)) r.note = 'Ghi đè bản cũ'; save.cs[K(x.cinema, x.year, x.month)] = x; }
+          if (r.ok) { save.cs[K(x.cinema, x.year, x.month)] = x; }
           res.push(r); continue;
         }
         const v = parseVista(pg); v.file = f.name; v.cinema = cinemaFromName(v.cinemaName); v.uploadedAt = new Date().toISOString();
         if (isDaily(v) || S.mode === 'daily') { r.type = 'PDF Marketing Report (ngày)'; const er = dCheck(v); if (er) { r.check = er; res.push(r); continue; } const d = isoPad(v.from), kk = v.kpi; if (!v.cinema) v.warnings.push('Không nhận ra rạp: ' + (v.cinemaName || '?'));
           r.what = `${v.cinema || v.cinemaName || '?'} · ${dLab(d)}/${d.slice(0, 4)} · Admits ${f0(kk.adm)} · ATP ${fR(kk.adm ? kk.bo_sales / kk.adm : null)} · SPP ${fR(kk.adm ? kk.co_net / kk.adm : null)} · SRT ${fR(kk.adm_strike)}% · SPT ${fR(kk.avg_co_trans)} · ${v.films.length} phim`;
           r.ok = !!(v.cinema && d && kk.adm); r.check = v.warnings.filter((t) => !/Kỳ báo cáo/.test(t)).join('; ');
-          if (r.ok) { const k = DK(v.cinema, d); if (dGet('dmk', k)) r.note = 'Ghi đè bản cũ'; save.dmk[k] = { file: f.name, uploadedAt: v.uploadedAt, kpi: v.kpi, channel: v.channel, group: v.group, films: v.films.map((q) => ({ film: q.film, opening: q.opening, week: q.week, sessions: q.sessions, adm: q.adm, nbo: q.nbo, occupancy: q.occupancy, atp: q.atp })) }; }
+          if (r.ok) { const k = DK(v.cinema, d); save.dmk[k] = { file: f.name, uploadedAt: v.uploadedAt, kpi: v.kpi, channel: v.channel, group: v.group, films: v.films.map((q) => ({ film: q.film, opening: q.opening, week: q.week, sessions: q.sessions, adm: q.adm, nbo: q.nbo, occupancy: q.occupancy, atp: q.atp })) }; }
           res.push(r); continue; }
         if (!v.cinema) v.warnings.push('Không nhận ra rạp: ' + (v.cinemaName || '?')); if (!v.films.length) v.warnings.push('Không đọc được bảng phim');
         r.type = 'PDF Vista'; const kk = v.kpi; r.what = `${v.cinema || v.cinemaName || '?'} · ${v.month ? mlab(v.month) + '/' + v.year : '?'} · Admits ${f0(kk.adm)} · BO Sales ${f0(kk.bo_sales)} · CO Net ${f0(kk.co_net)} · Strike ${fR(kk.adm_strike)}% · Avg/CO trans ${fR(kk.avg_co_trans)} · ${v.films.length} phim · ${v.tickets.length} ticket type · ${v.combos.length} combo`;
         r.ok = !!(v.cinema && v.year && v.month && v.kpi.adm); r.check = v.warnings.join('; ');
         if (v.from && v.to && (Date.parse(isoPad(v.to)) - Date.parse(isoPad(v.from))) / 864e5 < 27) { r.ok = false; r.check = `Không nhận: kỳ ${dShort(isoPad(v.from))} → ${dShort(isoPad(v.to))} không phải báo cáo tháng. File ngày tải ở tab Daily.`; } r.note = (v.adjust || []).join('; ');
-        if (r.ok) { if (vGet(v.cinema, v.year, v.month)) r.note = ['Ghi đè bản cũ', r.note].filter(Boolean).join('; '); save.vista[K(v.cinema, v.year, v.month)] = v; }
+        if (r.ok) { save.vista[K(v.cinema, v.year, v.month)] = v; }
       } else if (/\.xlsx?$/i.test(f.name)) {
         const book = await readBook(f, 130);
         if (Object.keys(book).some((n) => /^(QT|TC|NVQ|TrC|PHI|BRI)\s+\d{4}$/i.test(n.trim())) && Object.values(book).some((R) => R.slice(0, 3).some((row) => (row || []).some((x) => typeof x === 'string' && /Daily F&B Report/i.test(x))))) {
@@ -1607,8 +1627,22 @@ async function uploadAny(files) {
   $('#upRes', m).innerHTML = `<div class="tw"><table><thead><tr><th class="t">File</th><th class="t">Loại</th><th class="t">Nội dung</th><th class="t">Kiểm tra</th></tr></thead><tbody>${res.map((r) => `<tr><td class="t">${esc(r.file)}</td><td class="t">${esc(r.type)}</td><td class="t">${esc(r.what)}</td><td class="t">${r.ok ? (r.check ? `<span class="bad">${esc(r.check)}</span>` : `<span class="ok">Khớp</span>${r.note ? ` <span class="flat">· ${r.note}</span>` : ''}`) : `<span class="bad">${esc(r.check || 'Không đọc được')}</span>`}</td></tr>`).join('')}</tbody></table></div>${S.fb ? '' : '<div class="msg warn">Chưa kết nối Firebase: dữ liệu chỉ lưu trên máy này.</div>'}`;
   if (!window.PLOK) { const pl = ['vista', 'bp', 'market', 'hc', 'plan', 'cs']; if (pl.some((k) => Object.keys(save[k]).length)) { pl.forEach((k) => (save[k] = {})); $('#upRes', m).insertAdjacentHTML('beforeend', '<div class="msg warn">File P&L chỉ lưu khi đã đăng nhập tab P&L. Lần này chỉ lưu số Daily.</div>'); } }
   ['vista', 'bp', 'hc', 'plan', 'cs', 'dxl', 'dmk', 'dcs'].forEach((k) => Object.keys(save[k]).forEach((key) => { if (!canSee(key.split('_')[0])) delete save[k][key]; })); // tài khoản rạp chỉ ghi số của rạp mình
-  const b = $('#upSave', m); b.disabled = !res.some((r) => r.ok);
+  // chỉ lưu phần mới; phần đã có giữ nguyên, phần khác số cũ chỉ ghi đè khi Anh chọn
+  const KL = { vista: 'Marketing Report', bp: 'Ops BP', market: 'Thị phần', hc: 'Lương & headcount', plan: 'BP2026', cs: 'Concession Sales', dxl: 'Daily CO Excel', dmk: 'Marketing Report ngày', dcs: 'Concession Sales ngày' };
+  const lab = (k, key) => { const p = key.split('_'); if (k === 'market') return `T${p[1].padStart(2, '0')}/${p[0]}`; if (/^d/.test(k)) { const d = p.pop(); return `${p.join('_')} ${dShort(d)}/${d.slice(2, 4)}`; } return `${p[0]} T${String(p[2]).padStart(2, '0')}/${p[1]}`; };
+  const old = (k, key) => (/^d(xl|mk|cs)$/.test(k) ? dGet(k, key) : S.up[k] && S.up[k][key]) || null;
+  const strip = (v) => JSON.stringify(v, (kk, x) => (['file', 'uploadedAt', 'warnings', 'adjust'].includes(kk) ? undefined : x));
+  const stat = { add: {}, same: {}, diff: {} }; const pick = {};
+  Object.keys(save).forEach((k) => { pick[k] = {}; Object.entries(save[k]).forEach(([key, v]) => { const o = old(k, key); const t = !o ? 'add' : strip(o) === strip(v) ? 'same' : 'diff'; (stat[t][k] = stat[t][k] || []).push(key); }); });
+  const cnt = (t) => Object.values(stat[t]).reduce((a, l) => a + l.length, 0);
+  const list = (t) => Object.entries(stat[t]).map(([k, l]) => { const L = l.map((key) => lab(k, key)).sort(); return `${KL[k] || k}: ${L.length > 8 ? L.slice(0, 3).join(', ') + ` … ${L.slice(-2).join(', ')} (${L.length} mục)` : L.join(', ')}`; }).join('<br>');
+  const nAdd = cnt('add'), nSame = cnt('same'), nDiff = cnt('diff');
+  if (nAdd + nSame + nDiff) $('#upRes', m).insertAdjacentHTML('beforeend', `<div class="upsum">${nAdd ? `<div><b class="ok">Mới, sẽ lưu (${nAdd}):</b><br>${list('add')}</div>` : ''}${nSame ? `<div><b>Đã có, giống hệt – không cần lưu lại (${nSame}):</b><br><span class="mut">${list('same')}</span></div>` : ''}${nDiff ? `<div><b class="bad">Đã có nhưng khác số đang lưu (${nDiff}):</b><br>${list('diff')}<label class="ow"><input type="checkbox" id="upOw"> Ghi đè các mục này bằng số trong file mới</label></div>` : ''}</div>`);
+  const b = $('#upSave', m); const ow = () => !!($('#upOw', m) || {}).checked;
+  const upd = () => { b.disabled = !res.some((r) => r.ok) || !(nAdd || (nDiff && ow())); b.textContent = !nAdd && !nDiff && nSame ? 'Đã có đủ, không cần lưu' : 'Lưu vào dữ liệu'; };
+  upd(); if ($('#upOw', m)) $('#upOw', m).onchange = upd;
   b.onclick = async () => { b.disabled = true;
+    Object.keys(save).forEach((k) => { const keep = new Set([...(stat.add[k] || []), ...(ow() ? stat.diff[k] || [] : [])]); Object.keys(save[k]).forEach((key) => { if (!keep.has(key)) delete save[k][key]; }); });
     try { let allFb = true; for (const k of ['vista', 'bp', 'market', 'hc', 'plan', 'cs', 'dxl', 'dmk', 'dcs']) if (Object.keys(save[k]).length) allFb = (await persist(k, save[k])) && allFb;
       m.remove(); fillYears();
       toast(allFb ? 'Đã lưu ' + res.filter((r) => r.ok).length + ' file lên Firebase' : 'Đã lưu trên máy này, CHƯA lên Firebase' + (S.fbErr ? ': ' + S.fbErr : ' (chưa kết nối)') + '. App sẽ tự ghi lại khi kết nối được.', allFb ? 2500 : 8000);
@@ -1638,8 +1672,8 @@ function dataModal(y = S.year) {
 
 /* ---------- wiring ---------- */
 function buildTabs() { if (!canSee(S.cin)) S.cin = CINV()[0].code; $('#tabs').innerHTML = CINV().map((c) => `<button data-c="${c.code}" title="${esc(c.name)}">${esc(c.short)}</button>`).join(''); document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('on', b.dataset.c === S.cin)); }
-function init() {
-  loadCache();
+async function init() {
+  await loadCache();
   if (!CI[S.cin]) S.cin = 'QT';
   if (!canSee(S.cin)) S.cin = CINV()[0].code;
   buildTabs();
