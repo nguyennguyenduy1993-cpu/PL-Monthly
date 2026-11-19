@@ -326,6 +326,7 @@ window.FIREBASE_CONFIG = {
     const per = all.find((l) => /From\s+\w+\s+\d{2}\/\d{2}\/\d{4}/.test(l.text));
     if (per) {
       const m = per.text.match(/From\s+\w+\s+(\d{2})\/(\d{2})\/(\d{4}).*?To\s+\w+\s+(\d{2})\/(\d{2})\/(\d{4})/);
+      { const vt = per.text.match(/Value\s*Type\s*:?\s*([A-Za-z]+)/i) || pages0.map((pg) => pg.items.map((i) => i.str).join(' ')).join(' ').match(/Value\s*Type\s*:?\s*([A-Za-z]+)/i); out.valueType = vt ? vt[1] : null; }
       const tt = [...per.text.matchAll(/\d{1,2}\/\d{1,2}\/\d{4}\s+(\d{1,2}:\d{2})/g)].map((q) => q[1].padStart(5, '0')); out.fromT = tt[0] || null; out.toT = tt[1] || null;
       if (m) { out.from = `${m[3]}-${m[2]}-${m[1]}`; out.to = `${m[6]}-${m[5]}-${m[4]}`; out.year = +m[3]; out.month = +m[2];
         if ((Date.parse(out.to) - Date.parse(out.from)) / 864e5 > 1.5 && (m[1] !== '01' || m[4] !== '01')) out.warnings.push('Kỳ báo cáo không bắt đầu/kết thúc ngày 01: ' + out.from + ' → ' + out.to); }
@@ -1137,7 +1138,7 @@ function render() {
   $('#main').innerHTML = h;
   bindYear(P); spy();
 }
-const NGRP = ['SPP & cơ cấu F&B', 'Combo tổng quan', 'Combo thường', 'Combo Extra', 'Combo U22', 'Group combo'];
+const NGRP = ['SPP & cơ cấu F&B', 'Combo tổng quan', 'Combo thường', 'Combo Extra', 'Combo U22', 'Group combo', 'Box office', 'F&B tổng quan', 'F&B theo nhóm', 'F&B cần quan tâm', 'Top film'];
 const noteLi = (f) => `<li class="${f.lv}"><i></i><div>${esc(f.text)}${f.action ? `<div class="a">→ ${esc(f.action)}</div>` : ''}</div></li>`;
 const notes = (L) => { if (!L || !L.length) return `<div class="card nt"><div class="ct">Điểm cần lưu ý</div><div class="cs">Chưa đủ dữ liệu để rút ra nhận định cho kỳ này.</div></div>`;
   const grouped = L.some((f) => f.grp); let body;
@@ -1588,6 +1589,9 @@ async function uploadAny(files) {
           res.push(r); continue;
         }
         const v = parseVista(pg); v.file = f.name; v.cinema = cinemaFromName(v.cinemaName); v.uploadedAt = new Date().toISOString();
+        // chỉ nhận số Net: báo cáo phải chọn Value Type = Net và có Concession Sales Net
+        { const vt = String(v.valueType || ''); const er = !vt ? 'Không khớp: không đọc được Value Type, báo cáo phải xuất ở Value Type: Net' : !/^net$/i.test(vt) ? `Không khớp: báo cáo đang ở Value Type: ${vt}, cần xuất lại với Value Type: Net` : !fin(v.kpi.co_net) ? 'Không khớp: thiếu Concession Sales Net' : !fin(v.kpi.bo_sales) ? 'Không khớp: thiếu Box Office Sales (Net)' : '';
+          if (er) { r.type = 'PDF Marketing Report'; r.what = `${v.cinema || v.cinemaName || '?'} · ${v.from ? dShort(isoPad(v.from)) + '/' + isoPad(v.from).slice(0, 4) : ''}`; r.check = er; res.push(r); continue; } }
         if (isDaily(v) || S.mode === 'daily') { r.type = 'PDF Marketing Report (ngày)'; const er = dCheck(v); if (er) { r.check = er; res.push(r); continue; } const d = isoPad(v.from), kk = v.kpi; if (!v.cinema) v.warnings.push('Không nhận ra rạp: ' + (v.cinemaName || '?'));
           r.what = `${v.cinema || v.cinemaName || '?'} · ${dLab(d)}/${d.slice(0, 4)} · Admits ${f0(kk.adm)} · ATP ${fR(kk.adm ? kk.bo_sales / kk.adm : null)} · SPP ${fR(kk.adm ? kk.co_net / kk.adm : null)} · SRT ${fR(kk.adm_strike)}% · SPT ${fR(kk.avg_co_trans)} · ${v.films.length} phim`;
           r.ok = !!(v.cinema && d && kk.adm); r.check = v.warnings.filter((t) => !/Kỳ báo cáo/.test(t)).join('; ');
@@ -2097,9 +2101,9 @@ const dCols = (c) => ({ co: D_CO[c] || D_CO.NVQ, cm: D_CM[c] || [] });
 const COMBO_COLS = ['CB1', 'CB1Ex', 'CB2', 'CB2Ex', 'Combo3', 'Combo4'];
 
 /* phân loại món Concession Item Sales vào cột Daily CO (CB1/CB2 gồm U22, Milo, Ovaltine, CB small; Premium tính vào Extra) */
-function coCounts(items) {
+function coCounts(items, field = 'qty') {
   const o = {}; const add = (k, q) => (o[k] = (o[k] || 0) + (q || 0));
-  items.forEach((it) => { const c = String(it.cls || ''), n = norm(it.item), q = it.qty || 0;
+  items.forEach((it) => { const c = String(it.cls || ''), n = norm(it.item), q = it[field] || 0;
     if (/^CO Online$/i.test(c)) return add('CB Online', q);
     if (/movie combo/i.test(c) || /movie combo|mvcb/.test(n)) return add('MVCB', q);
     if (/^F&B /i.test(c)) { // Cinemunch; rạp không có Cinemunch thì quy về Snacking / Food CB / Đồ chiên
@@ -2132,7 +2136,7 @@ function dayRec(c, d) {
     r.spt = fin(k.avg_co_trans) ? k.avg_co_trans : fin(k.co_net) && k.trans_co ? k.co_net / k.trans_co : null; if (fin(r.spt) && fin(r.spp) && fin(r.srt_ad) && r.srt_ad) { const e = r.spp / r.srt_ad; if (Math.abs(r.spt / e - 1) > 0.2) r.spt = e; }
     const g = mk.group; if (g) { const T = (g.single || 0) + (g.two || 0) + (g.three || 0) + (g.four || 0) + (g.more || 0); if (T) { r.g1 = g.single / T; r.g2 = g.two / T; r.g3 = g.three / T; r.g4 = ((g.four || 0) + (g.more || 0)) / T; r.g4only = (g.four || 0) / T; r.g5 = (g.more || 0) / T; } }
     r.films = mk.films || []; }
-  if (cs) { r.src.push('cs'); r.co = coCounts(cs.items.map(([cls, item, qty, net]) => ({ cls, item, qty, net }))); r.csItems = cs.items; }
+  if (cs) { r.src.push('cs'); const its = cs.items.map(([cls, item, qty, net]) => ({ cls, item, qty, net })); r.co = coCounts(its); r.con = coCounts(its, 'net'); r.conT = its.reduce((a, i) => a + (i.net || 0), 0); r.csItems = cs.items; }
   if (fin(oph)) r.oph = oph;
   // số giao dịch suy ra để cộng dồn đúng trọng số
   r.nbo = fin(r.atp) && r.adm ? r.atp * r.adm : null; r.co_net = fin(r.spp) && r.adm ? r.spp * r.adm : null;
@@ -2147,6 +2151,11 @@ function dAgg(c, days) {
   o.srt_ad = o.adm && fin(o.tco) ? o.tco / o.adm : null; o.srt_tr = o.ttk ? o.tco / o.ttk : null; o.spt = o.tco ? o.co_net / o.tco : null;
   ['g1', 'g2', 'g3', 'g4'].forEach((g) => { const w = sum(null, (r) => (fin(r[g]) && fin(r.ttk) ? r[g] * r.ttk : null)), ww = sum(null, (r) => (fin(r[g]) && fin(r.ttk) ? r.ttk : null)); o[g] = ww ? w / ww : null; });
   o.co = {}; R.forEach((r) => Object.entries(r.co || {}).forEach(([k, v]) => { if (fin(v)) o.co[k] = (o.co[k] || 0) + v; }));
+  // doanh thu theo nhóm (chỉ khi mọi ngày đều có Concession Sales)
+  if (R.every((r) => r.con)) { o.con = {}; R.forEach((r) => Object.entries(r.con).forEach(([k, v]) => (o.con[k] = (o.con[k] || 0) + v))); o.conT = R.reduce((a, r) => a + r.conT, 0); }
+  o.onAdm = sum(null, (r) => (fin(r.online) ? r.online * r.adm : null));
+  // món theo tên (khi có Concession Sales)
+  if (R.every((r) => r.csItems)) { o.items = {}; R.forEach((r) => r.csItems.forEach(([cls, item, qty, net]) => { const e = (o.items[item] = o.items[item] || { cls, item, qty: 0, net: 0 }); e.qty += qty || 0; e.net += net || 0; })); }
   const occ = R.filter((r) => fin(r.occ)); o.occ = occ.length === R.length ? occ.reduce((a, r) => a + r.occ * r.adm, 0) / o.adm : null;
   return o;
 }
@@ -2227,19 +2236,8 @@ function dailyNotes(c, P) {
     if (fin(a) || fin(b)) add((fin(a) ? a : b) >= 0 ? 'good' : (fin(a) ? a : b) < -0.15 ? 'bad' : 'warn', `Admits ${f0(r.adm)}${sfx}: ${[fin(b) ? `${dp(b)} so với ${l1}` : '', fin(a) ? `${dp(a)} so với ${lw}` : ''].filter(Boolean).join(', ')}.`, (fin(a) ? a : b) < -0.15 ? 'Xem mục Top film: phim nào kéo giảm, phim nào còn dư suất để chuyển suất sang phim đang bán.' : '', 'Box office');
     const base = w || y, bl = w ? lw : l1; const atp = dDiff('atp', r.atp, base && base.atp); if (fin(atp) && Math.abs(atp) >= 0.03) add(atp >= 0 ? 'good' : 'warn', `ATP ${fR(r.atp)} nghìn đ (${dp(atp)} so với ${bl}).`, atp < 0 ? 'Kiểm tra tỷ trọng vé ưu đãi (merchant, U22, member) trong kỳ.' : '', 'Box office');
     const on = dDiff('online', r.online, base && base.online); if (fin(on) && Math.abs(on) >= 0.03) add('flat', `Khách mua vé online ${pc(r.online)} (${dpt(on)} so với ${bl}).`, on > 0 ? 'Khách online qua quầy ít hơn: mời combo ngay tại cửa soát vé và quầy check-in.' : '', 'Box office'); }
-  // F&B: SPP = SRT (AD) × SPT
   const wb = w && fin(w.spp) ? w : y, wl = w && fin(w.spp) ? lw : l1;
-  if (wb && fin(r.spp) && fin(wb.spp)) { const dS = r.spp - wb.spp, eSrt = fin(r.srt_ad) && fin(wb.srt_ad) && fin(wb.spt) ? (r.srt_ad - wb.srt_ad) * wb.spt : null, eSpt = fin(r.spt) && fin(wb.spt) && fin(r.srt_ad) ? (r.spt - wb.spt) * r.srt_ad : null;
-    add(dS >= 0 ? 'good' : 'bad', `SPP ${fR(r.spp)} nghìn đ/khách (${dS >= 0 ? '' : '-'}${fR(Math.abs(dS))} so với ${wl}). Do tỷ lệ khách mua (SRT AD ${pc(r.srt_ad)}, ${dpt(r.srt_ad - wb.srt_ad)}): ${fR(eSrt)}; do giá trị mỗi giao dịch (SPT ${fR(r.spt)}, ${dp(ch(r.spt, wb.spt))}): ${fR(eSpt)}.`,
-      dS < 0 ? (Math.abs(eSrt || 0) >= Math.abs(eSpt || 0) ? 'Ít khách mua hơn: tăng mời chào ở quầy vé, cửa soát vé và khách online chưa mua kèm.' : 'Khách vẫn mua nhưng chi ít hơn: nhắc nâng size Extra, chào combo thay cho món lẻ.') : '', 'F&B'); }
-  const { co, cm } = dCols(c);
-  if (wb) { const hit = (o, k) => (o && o.adm ? (coPick(c, o.co, k) || 0) / o.adm : null);
-    const mv = co.concat(cm.map((k) => 'cm:' + k)).map((k) => [k.replace('cm:', 'Cinemunch '), hit(r, k), hit(wb, k)]).filter(([, a, b]) => fin(a) && fin(b) && Math.abs(a - b) >= 0.01).sort((x, z) => Math.abs(z[1] - z[2]) - Math.abs(x[1] - x[2])).slice(0, 4);
-    if (mv.length) add(mv.filter(([, a, b]) => a < b).length > mv.length / 2 ? 'warn' : 'flat', `%Hit thay đổi nhiều nhất so với ${wl}: ${mv.map(([k, a, b]) => `${k} ${pc(a)} (${dpt(a - b)})`).join(', ')}.`, '', 'F&B');
-    const exR = (o) => { const n = ['CB1', 'CB2'].reduce((s, k) => s + (coPick(c, o.co, k) || 0), 0), e = ['CB1Ex', 'CB2Ex'].reduce((s, k) => s + (coPick(c, o.co, k) || 0), 0); return n + e ? e / (n + e) : null; };
-    const e1 = exR(r), e0 = exR(wb); if (fin(e1) && fin(e0)) add(e1 >= e0 ? 'good' : 'bad', `Tỷ lệ Extra trong combo 1-2 tại quầy ${pc(e1)} (${dpt(e1 - e0)} so với ${wl}).`, e1 < e0 - 0.03 ? 'Giám sát kịch bản mời nâng size tại quầy, nhất là ca cao điểm; đối chiếu theo nhân viên trong ca.' : '', 'F&B');
-    const fam = (r.g3 || 0) + (r.g4 || 0), g34 = r.adm ? ((coPick(c, r.co, 'Combo3') || 0) + (coPick(c, r.co, 'Combo4') || 0)) / r.adm : null;
-    if (fin(r.g3) && fam >= 0.15 && fin(g34) && g34 < 0.02) add('warn', `Nhóm 3 người trở lên chiếm ${pc(fam)} giao dịch vé nhưng Combo 3/4 chỉ đạt ${pc(g34)} %Hit.`, 'Chào Combo 3/4 khi khách mua từ 3 vé trở lên.', 'F&B'); }
+  fnbNotes(c, P, r, wb, wl, add);
   // phim
   const fc = filmCmp(c, P); const nx = P.single ? 'ngày mai' : 'các ngày tới';
   if (fc && fc.rows.length) { const R = fc.rows; const top = R[0];
@@ -2371,6 +2369,61 @@ function missModal() {
   m.onclick = (e) => { const t = e.target.closest('.mday'); if (t) { m.remove(); S.cin = t.dataset.c; S.dfrom = S.dto = t.dataset.d; render(); return; } if (e.target.closest('[data-act2=up]')) { m.remove(); const fu = $('#fUp'); if (fu) fu.click(); } };
   draw();
 }
+
+/* ---------- F&B theo nhóm: nhóm nào tăng/giảm, kênh nào, món nào, cần quan tâm gì ---------- */
+const FNB_G = [['Combo tại quầy', ['MVCB', 'CB1', 'CB1Ex', 'CB2', 'CB2Ex', 'Combo3', 'Combo4', 'Snacking', 'Food CB', 'Combo khác']], ['Combo online', ['CB Online']], ['Nước lẻ', ['Drink']], ['Bắp lẻ', ['Pop']], ['Đồ chiên', ['Đồ chiên']], ['Cinemunch', ['cm:icombo', 'cm:Combo', 'cm:Food', 'cm:Drink']]];
+function fnbGroups(c, o) { if (!o || !o.adm) return null; const { co, cm } = dCols(c); const has = new Set(co.concat(cm.map((k) => 'cm:' + k)));
+  return FNB_G.map(([g, ks]) => { const K2 = ks.filter((k) => has.has(k) || (k === 'Combo khác' && o.co && o.co[k])); if (!K2.length) return null;
+    const q = K2.reduce((a, k) => a + (coPick(c, o.co, k) || 0), 0); const net = o.con ? K2.reduce((a, k) => a + (o.con[k] || 0) + (dCols(c).cm.length ? 0 : o.con['alt:' + k] || 0), 0) : null;
+    return { g, ks: K2, q, hit: q / o.adm, spp: fin(net) ? net / o.adm : null, pr: fin(net) && q ? net / q : null }; }).filter(Boolean); }
+function fnbNotes(c, P, r, wb, wl, add) {
+  if (!fin(r.spp)) return; const G = 'F&B tổng quan', G2 = 'F&B theo nhóm', G3 = 'F&B cần quan tâm';
+  const small = r.adm < 150 ? ` (chỉ ${f0(r.adm)} admit, biến động % dễ lớn)` : '';
+  // 1. SPP = SRT (AD) × SPT
+  if (wb && fin(wb.spp)) { const dS = r.spp - wb.spp, eSrt = fin(r.srt_ad) && fin(wb.srt_ad) && fin(wb.spt) ? (r.srt_ad - wb.srt_ad) * wb.spt : null, eSpt = fin(r.spt) && fin(wb.spt) && fin(r.srt_ad) ? (r.spt - wb.spt) * r.srt_ad : null;
+    add(dS >= 0 ? 'good' : 'bad', `SPP ${fR(r.spp)} nghìn đ/khách (${dS >= 0 ? '' : '-'}${fR(Math.abs(dS))} so với ${wl})${small}. Phần do tỷ lệ khách mua (SRT AD ${pc(r.srt_ad)}, ${dpt(r.srt_ad - wb.srt_ad)}): ${fR(eSrt)}; phần do giá trị mỗi giao dịch (SPT ${fR(r.spt)}, ${dp(ch(r.spt, wb.spt))}): ${fR(eSpt)}.`, '', G); }
+  else add('flat', `SPP ${fR(r.spp)} nghìn đ/khách, SRT AD ${pc(r.srt_ad)}, SPT ${fR(r.spt)}.`, '', G);
+  const A = fnbGroups(c, r), B = fnbGroups(c, wb); if (!A) return; const Bm = B ? Object.fromEntries(B.map((x) => [x.g, x])) : {};
+  const byRev = A.every((x) => fin(x.spp)) && B && B.every((x) => fin(x.spp));
+  // 2. nhóm nào kéo SPP: theo doanh thu/khách nếu có Concession Sales cả 2 kỳ, không thì theo %Hit
+  if (B) { const mv = A.map((x) => { const y = Bm[x.g]; return y ? { ...x, dh: x.hit - y.hit, ds: byRev ? x.spp - y.spp : null, dp: byRev && fin(x.pr) && fin(y.pr) ? x.pr / y.pr - 1 : null, y } : null; }).filter(Boolean);
+    if (byRev) { const tot = A.reduce((a, x) => a + x.spp, 0), resid = r.spp - tot;
+      const up = mv.filter((x) => x.ds >= 0.3).sort((a, b) => b.ds - a.ds), dn = mv.filter((x) => x.ds <= -0.3).sort((a, b) => a.ds - b.ds);
+      add('flat', `Đóng góp vào SPP theo nhóm: ${A.map((x) => `${x.g} ${fR(x.spp)}`).join(' · ')}${Math.abs(resid) >= 0.5 ? ` · món khác ${fR(resid)}` : ''} (nghìn đ/khách).`, '', G);
+      if (up.length || dn.length) add(dn.length && (!up.length || Math.abs(dn[0].ds) > up[0].ds) ? 'warn' : 'good', `So với ${wl}: ${[up.length ? 'tăng ở ' + up.map((x) => `${x.g} ${dp1(x.ds)}`).join(', ') : '', dn.length ? 'giảm ở ' + dn.map((x) => `${x.g} ${dp1(x.ds)}`).join(', ') : ''].filter(Boolean).join('; ')} (nghìn đ/khách).`, '', G); }
+    mv.forEach((x) => { if (Math.abs(x.dh) < 0.005 && !(byRev && Math.abs(x.ds) >= 0.3)) return;
+      const pt = byRev && fin(x.dp) && Math.abs(x.dp) >= 0.03 ? `, giá bình quân/phần ${fR(x.pr)} (${dp(x.dp)})` : '';
+      add(x.dh >= 0 ? 'good' : 'warn', `${x.g}: ${f0(x.q)} phần, %Hit ${pc(x.hit)} (${dpt(x.dh)} so với ${wl})${byRev ? `, ${fR(x.spp)} nghìn đ/khách` : ''}${pt}.`, '', G2); });
+    // trong combo tại quầy: loại nào tăng/giảm
+    const cq = A.find((x) => x.g === 'Combo tại quầy'), cq0 = Bm['Combo tại quầy'];
+    if (cq && cq0) { const it = cq.ks.map((k) => { const a = coPick(c, r.co, k) || 0, b = coPick(c, wb.co, k) || 0; return { k, a, b, d: a / r.adm - b / wb.adm }; }).filter((x) => x.a + x.b > 0 && Math.abs(x.d) >= 0.003).sort((a, b) => Math.abs(b.d) - Math.abs(a.d)).slice(0, 4);
+      if (it.length) add('flat', `Trong combo tại quầy: ${it.map((x) => `${x.k} ${f0(x.a)} phần (${dpt(x.d)} %Hit)`).join(', ')}.`, '', G2); } }
+  else A.forEach((x) => add('flat', `${x.g}: ${f0(x.q)} phần, %Hit ${pc(x.hit)}${fin(x.spp) ? `, ${fR(x.spp)} nghìn đ/khách` : ''}.`, '', G2));
+  // 3. theo kênh: khách online có mua combo online không, khách tại quầy mua combo bao nhiêu
+  const ch2 = (o) => { if (!o || !fin(o.onAdm) || !o.adm) return null; const off = o.adm - o.onAdm, on = coPick(c, o.co, 'CB Online') || 0, cq = (fnbGroups(c, o) || []).find((x) => x.g === 'Combo tại quầy'); return { on: o.onAdm ? on / o.onAdm : null, off: off > 0 && cq ? cq.q / off : null }; };
+  const k1 = ch2(r), k0 = ch2(wb);
+  if (k1 && fin(k1.on) && fin(k1.off)) add(k0 && fin(k0.on) && k1.on < k0.on - 0.01 ? 'warn' : 'flat', `Theo kênh: combo online đạt ${fR(k1.on * 100)} phần/100 khách mua vé online${k0 && fin(k0.on) ? ` (${dpt(k1.on - k0.on)})` : ''}; combo tại quầy đạt ${fR(k1.off * 100)} phần/100 khách mua vé tại quầy${k0 && fin(k0.off) ? ` (${dpt(k1.off - k0.off)})` : ''}. Khách online vẫn có thể mua combo ở quầy nên tỷ lệ tại quầy cao hơn thực tế.`, '', G2);
+  // 4. món lẻ thay combo, Extra, group size
+  const ex = (o) => { const n = ['CB1', 'CB2'].reduce((s, k) => s + (coPick(c, o.co, k) || 0), 0), e = ['CB1Ex', 'CB2Ex'].reduce((s, k) => s + (coPick(c, o.co, k) || 0), 0); return n + e ? e / (n + e) : null; };
+  const watch = [];
+  if (B) { const g = (n, L) => (L.find((x) => x.g === n) || {}); const cA = g('Combo tại quầy', A), cB = g('Combo tại quầy', B), dA = (g('Nước lẻ', A).hit || 0) + (g('Bắp lẻ', A).hit || 0), dB = (g('Nước lẻ', B).hit || 0) + (g('Bắp lẻ', B).hit || 0);
+    if (fin(cA.hit) && fin(cB.hit) && cA.hit < cB.hit - 0.005 && dA > dB + 0.005) watch.push(['bad', `Combo tại quầy giảm (${dpt(cA.hit - cB.hit)}) trong khi nước/bắp lẻ tăng (${dpt(dA - dB)}): khách đang chuyển từ combo sang mua lẻ.`, 'Khi khách gọi nước hoặc bắp lẻ, chào combo kèm chênh lệch giá cụ thể; kiểm tra combo nào đang thiếu hàng hoặc ngưng bán.']);
+    else if (fin(cA.hit) && fin(cB.hit) && cA.hit < cB.hit - 0.01) watch.push(['bad', `Combo tại quầy giảm ${dpt(cA.hit - cB.hit)} %Hit so với ${wl}.`, 'Kiểm tra kịch bản mời combo ở quầy vé và quầy F&B theo ca, ưu tiên ca cao điểm; gợi ý combo theo phim đang bán mạnh.']);
+    const e1 = ex(r), e0 = ex(wb); if (fin(e1) && fin(e0) && e1 < e0 - 0.03) watch.push(['bad', `Tỷ lệ Extra trong combo 1-2 còn ${pc(e1)} (${dpt(e1 - e0)} so với ${wl}).`, 'Nhắc câu mời nâng size Extra; đối chiếu tỷ lệ Extra theo nhân viên trong ca để kèm cặp đúng người.']);
+    else if (fin(e1) && fin(e0) && e1 > e0 + 0.03) add('good', `Tỷ lệ Extra trong combo 1-2 lên ${pc(e1)} (${dpt(e1 - e0)}).`, '', G2);
+    if (k1 && k0 && fin(k1.on) && fin(k0.on) && k1.on < k0.on - 0.02) watch.push(['warn', `Khách online mua combo online giảm còn ${pc(k1.on)} (${dpt(k1.on - k0.on)}).`, 'Khách online không qua quầy vé nên ít được mời: chào combo ở cửa soát vé và quầy F&B; báo HO nếu combo online đang thiếu trên app/web.']);
+    const cm1 = g('Cinemunch', A), cm0 = g('Cinemunch', B); if (fin(cm1.hit) && fin(cm0.hit) && cm1.hit < cm0.hit - 0.005) watch.push(['warn', `Cinemunch giảm ${dpt(cm1.hit - cm0.hit)} %Hit (${f0(cm1.q)} phần).`, 'Kiểm tra trưng bày, hàng mẫu và món hết hàng tại quầy Cinemunch; chào kèm khi khách mua nước.']); }
+  const fam = (r.g3 || 0) + (r.g4 || 0), g34 = r.adm ? ((coPick(c, r.co, 'Combo3') || 0) + (coPick(c, r.co, 'Combo4') || 0)) / r.adm : null;
+  if (fin(r.g3) && fam >= 0.15 && fin(g34) && g34 < 0.02) watch.push(['warn', `Nhóm 3 người trở lên chiếm ${pc(fam)} giao dịch vé nhưng Combo 3/4 chỉ đạt ${pc(g34)} %Hit.`, 'Chào Combo 3/4 khi khách mua từ 3 vé trở lên.']);
+  // 5. món tăng/giảm mạnh (khi có Concession Sales cả 2 kỳ)
+  if (r.items && wb && wb.items) { const ks = new Set([...Object.keys(r.items), ...Object.keys(wb.items)]);
+    const L = [...ks].map((k) => { const a = r.items[k] || { qty: 0, net: 0, item: k }, b = wb.items[k] || { qty: 0, net: 0 }; return { k, a: a.qty, b: b.qty, d: a.qty / r.adm - b.qty / wb.adm, nd: a.net - b.net }; }).filter((x) => x.a + x.b >= 5);
+    const up = L.filter((x) => x.d > 0).sort((p, q) => q.nd - p.nd).slice(0, 3), dn = L.filter((x) => x.d < 0).sort((p, q) => p.nd - q.nd).slice(0, 3);
+    if (up.length || dn.length) add('flat', `Món thay đổi nhiều nhất so với ${wl}: ${[up.length ? 'tăng ' + up.map((x) => `${x.k} ${f0(x.a)} phần (${x.b} → ${x.a})`).join(', ') : '', dn.length ? 'giảm ' + dn.map((x) => `${x.k} ${f0(x.a)} phần (${x.b} → ${x.a})`).join(', ') : ''].filter(Boolean).join('; ')}.`, '', G2); }
+  if (watch.length) watch.forEach(([lv, t, a]) => add(lv, t, a, G3));
+  else if (B) add('good', 'Không có nhóm F&B nào giảm đáng kể so với ' + wl + '.', '', G3);
+}
+const dp1 = (x) => (fin(x) ? (x >= 0 ? '' : '-') + fR(Math.abs(x)) : '–');
 
 /* Xuất Excel tab Daily theo layout file Daily CO: sheet Tóm tắt + 1 sheet/rạp (từ 01/01 đến hết tháng đang xem, dòng Total theo tuần Fri–Thu) */
 function xBook() {
