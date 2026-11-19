@@ -223,6 +223,11 @@ td.pre{white-space:pre-line}.mut{color:var(--mut,#6B7178)}.sm{font-size:11px}
 .calsel{display:flex;align-items:center;gap:6px}.calsel select{font:inherit;font-size:13px;font-weight:600;border:1px solid #E3E3DE;border-radius:6px;padding:3px 6px;background:#fff}
 .upsum{margin-top:12px;padding:10px 12px;border:1px solid #E3E3DE;border-radius:8px;background:#FAFAF8;font-size:12.5px;display:grid;gap:8px;line-height:1.5}
 .upsum .ow{display:flex;align-items:center;gap:6px;margin-top:4px;font-weight:600}
+.btn.miss{border-color:#E8B4A8;color:#B4462E;background:#FFF6F3}.btn.miss b{display:inline-block;min-width:18px;padding:0 5px;margin-left:4px;border-radius:9px;background:#C0392B;color:#fff;font-size:11px;line-height:17px;text-align:center}
+.btn.miss.zero{border-color:#BFE3CF;color:#1E7B46;background:#F3FBF6}.btn.miss.zero b{background:#1E7B46}
+.mday{border:1px solid #E3E3DE;background:#fff;border-radius:6px;padding:3px 7px;margin:2px;font:inherit;font-size:12px;cursor:pointer}
+.mday.none{border-color:#E8B4A8;background:#FFF1EE;color:#B4462E}.mday.mk,.mday.cs{border-color:#F0D49A;background:#FFF9EC;color:#8A5A00}.mday:hover{filter:brightness(.96)}
+.mhd{display:flex;align-items:center;gap:14px;margin-bottom:10px}.mhd h3{margin:0}
 </style>
 </head>
 <body>
@@ -238,7 +243,7 @@ td.pre{white-space:pre-line}.mut{color:var(--mut,#6B7178)}.sm{font-size:11px}
   <button class="btn pri" id="bXls" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v12M7 11l5 5 5-5M5 20h14"/></svg>Excel</button>
   <input type="file" id="fUp" accept=".pdf,.xlsx" multiple hidden>
  </div>
- <div class="navrow"><nav class="nav" id="nav"></nav><button class="btn sm" id="bOut" type="button"><span></span></button><button class="btn sm" id="bData" type="button" aria-label="Dữ liệu và Firebase"><span class="dot" id="fbDot"></span>Dữ liệu<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></button></div>
+ <div class="navrow"><nav class="nav" id="nav"></nav><button class="btn sm" id="bOut" type="button"><span></span></button><button class="btn sm miss" id="bMiss" type="button" hidden>Thiếu số <b id="missN">0</b></button><button class="btn sm" id="bData" type="button" aria-label="Dữ liệu và Firebase"><span class="dot" id="fbDot"></span>Dữ liệu<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></button></div>
 </div>
 <main id="main"></main>
 <script>
@@ -1113,7 +1118,7 @@ function setMode() {
   document.title = dm ? 'Daily CO' : 'P&L Monthly';
 }
 function render() {
-  setMode(); if (S.mode === 'daily') return renderDaily();
+  setMode(); if (typeof missBadge === 'function') missBadge(); if (S.mode === 'daily') return renderDaily();
   if (!S.months || !S.months.length) { const a = availMonths(S.cin, S.year); S.months = [a.length ? a[a.length - 1] : 1]; }
   const P = period(); const c = S.cin; const ci = CI[c];
   document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('on', b.dataset.c === c));
@@ -1695,6 +1700,7 @@ async function init() {
   document.addEventListener('drop', (e) => { e.preventDefault(); if (e.dataTransfer.files.length) uploadAny([...e.dataTransfer.files]); });
   $('#bXls').onclick = () => (S.mode === 'daily' ? exportDaily() : exportExcel()).catch((e) => toast('Lỗi xuất Excel: ' + e.message, 5000));
   $('#bData').onclick = () => dataModal();
+  $('#bMiss').onclick = () => missModal();
   $('#main').addEventListener('click', (e) => { const b = e.target.closest('[data-act]'); if (!b) return; const a = b.dataset.act; if (a === 'up') fu.click(); else if (a === 'opexIn') opexEntry(); else if (a === 'opexEx') opexExplain(); else if (a === 'cm') opexExplain(+b.dataset.m, b.dataset.f); else if (a === 'dq' || a === 'dh') { S.dhit = a === 'dh'; render(); } else if (a === 'doph') ophModal(); else if (a === 'dday') { S.dfrom = S.dto = b.dataset.d; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); } });
   window.addEventListener('resize', () => { clearTimeout(window._rz); window._rz = setTimeout(() => drawYear(period()), 150); });
   render(); fbConnect();
@@ -2343,6 +2349,27 @@ function ophModal() {
   $('#ohS', m).onclick = async () => { const out = {}; m.querySelectorAll('input[data-d]').forEach((i) => { const k = DK(c, i.dataset.d), x = numIn(i.value); if (fin(x)) out[k] = x; else if (fin(U.doph[k])) out[k] = null; });
     if (Object.keys(out).length) { const fb = await persist('doph', out); Object.keys(out).forEach((k) => { if (out[k] == null) delete S.up.doph[k]; }); saveCache(); toast(fb ? 'Đã lưu Operation Hours' : 'Đã lưu trên máy này, CHƯA lên Firebase.'); }
     m.remove(); render(); };
+}
+
+/* ---------- cảnh báo ngày chưa nhập số (theo tháng đang xem, tới hôm qua) ---------- */
+function missScan(ref0) {
+  const ref = ref0 || S.dto || dYesterday(), y0 = dYesterday(); const md = monthDays(ref).filter((d) => d <= y0);
+  return CINV().map((ci) => { const c = ci.code; const rows = md.map((d) => { const k = DK(c, d), mk = !!dGet('dmk', k), cs = !!dGet('dcs', k), xl = !!dGet('dxl', k);
+      const st = mk && cs ? '' : xl && !mk && !cs ? '' : !mk && !cs ? 'none' : !mk ? 'mk' : 'cs'; return { d, st }; }).filter((x) => x.st);
+    return { c, name: ci.short || ci.name, rows }; }); }
+function missBadge() { const b = $('#bMiss'); if (!b) return; const show = S.mode === 'daily'; b.hidden = !show; if (!show) return;
+  const n = missScan().reduce((a, x) => a + x.rows.length, 0); $('#missN').textContent = n; b.classList.toggle('zero', !n); }
+function missModal() {
+  let ref = (S.dto || dYesterday()).slice(0, 7) + '-01'; const T = { none: 'Chưa upload', mk: 'Thiếu Marketing Report', cs: 'Thiếu Concession Sales' };
+  const yrs = [...new Set([2025, 2026, +dYesterday().slice(0, 4), ...(S._ddays || []).map((d) => +d.slice(0, 4))])].sort();
+  const m = modal(`<div class="mhd"><h3>Ngày chưa nhập số</h3><span class="calsel"><select id="msM">${Array.from({ length: 12 }, (_, i) => `<option value="${String(i + 1).padStart(2, '0')}">Tháng ${i + 1}</option>`).join('')}</select><select id="msY">${yrs.map((y) => `<option>${y}</option>`).join('')}</select></span></div>
+    <div class="tw" id="msB"></div><div class="mfoot"><button class="btn" data-close>Đóng</button><button class="btn pri" data-act2="up">Tải dữ liệu</button></div>`);
+  const draw = () => { $('#msM', m).value = ref.slice(5, 7); $('#msY', m).value = ref.slice(0, 4);
+    if (ref > dYesterday()) { $('#msB', m).innerHTML = '<div class="mut" style="padding:12px 0">Tháng này chưa tới.</div>'; return; }
+    $('#msB', m).innerHTML = `<table><tbody>${missScan(ref).map((x) => `<tr><td class="t"><b>${esc(x.name)}</b></td><td class="t">${x.rows.length ? x.rows.map((r) => `<button type="button" class="mday ${r.st}" data-c="${x.c}" data-d="${r.d}" title="${T[r.st]}">${dShort(r.d)}${r.st === 'none' ? '' : r.st === 'mk' ? ' · MR' : ' · CS'}</button>`).join('') : '<span class="ok">Đủ số</span>'}</td></tr>`).join('')}</tbody></table>`; };
+  m.onchange = () => { ref = `${$('#msY', m).value}-${$('#msM', m).value}-01`; draw(); };
+  m.onclick = (e) => { const t = e.target.closest('.mday'); if (t) { m.remove(); S.cin = t.dataset.c; S.dfrom = S.dto = t.dataset.d; render(); return; } if (e.target.closest('[data-act2=up]')) { m.remove(); const fu = $('#fUp'); if (fu) fu.click(); } };
+  draw();
 }
 
 /* Xuất Excel tab Daily theo layout file Daily CO: sheet Tóm tắt + 1 sheet/rạp (từ 01/01 đến hết tháng đang xem, dòng Total theo tuần Fri–Thu) */
