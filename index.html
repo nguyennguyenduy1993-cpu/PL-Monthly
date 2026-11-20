@@ -2302,7 +2302,7 @@ function renderDaily() {
   h += sec('dco', '03', 'Concession (%Hit = số phần / admits)', '', ct);
   h += sec('dnote', '04', P.single ? 'Nhận định trong ngày' : 'Nhận định trong kỳ', '', notes(dailyNotes(c, P)));
   const tdays = P.single ? monthDays(d) : P.days;
-  h += sec('dmonth', '05', P.single ? `Daily CO tháng ${d.slice(5, 7)}/${d.slice(0, 4)}` : `Daily CO ${P.lab}/${d.slice(0, 4)}`, `<span class="bts"><button class="btn sm${S.dhit ? '' : ' on'}" data-act="dq">Số phần</button><button class="btn sm${S.dhit ? ' on' : ''}" data-act="dh">%Hit</button><button class="btn sm" data-act="doph">Nhập Operation Hours</button></span>`, monthTable(c, tdays, P));
+  h += sec('dmonth', '05', P.single ? `Daily CO tháng ${d.slice(5, 7)}/${d.slice(0, 4)}` : `Daily CO ${P.lab}/${d.slice(0, 4)}`, `<span class="bts"><button class="btn sm${S.dhit ? '' : ' on'}" data-act="dq">Số phần</button><button class="btn sm${S.dhit ? ' on' : ''}" data-act="dh">%Hit</button></span>`, monthTable(c, tdays, P));
   $('#main').innerHTML = h; dspy();
 }
 // cùng các ngày của tháng trước (01 → ngày đang xem)
