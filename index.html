@@ -1717,7 +1717,7 @@ async function init() {
   $('#bXls').onclick = () => (S.mode === 'daily' ? exportDaily() : exportExcel()).catch((e) => toast('Lỗi xuất Excel: ' + e.message, 5000));
   $('#bData').onclick = () => dataModal();
   $('#bMiss').onclick = () => missModal();
-  $('#main').addEventListener('click', (e) => { const b = e.target.closest('[data-act]'); if (!b) return; const a = b.dataset.act; if (a === 'up') fu.click(); else if (a === 'opexIn') opexEntry(); else if (a === 'opexEx') opexExplain(); else if (a === 'cm') opexExplain(+b.dataset.m, b.dataset.f); else if (a === 'dq' || a === 'dh') { S.dhit = a === 'dh'; render(); } else if (a === 'doph') ophModal(); else if (a === 'apdf') areaPDF().catch((e) => toast('Lỗi tạo PDF: ' + e.message, 5000)); else if (a === 'dday') { S.dfrom = S.dto = b.dataset.d; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); } });
+  $('#main').addEventListener('click', (e) => { const b = e.target.closest('[data-act]'); if (!b) return; const a = b.dataset.act; if (a === 'up') fu.click(); else if (a === 'opexIn') opexEntry(); else if (a === 'opexEx') opexExplain(); else if (a === 'cm') opexExplain(+b.dataset.m, b.dataset.f); else if (a === 'dq' || a === 'dh') { S.dhit = a === 'dh'; render(); } else if (a === 'doph') ophModal(); else if (a === 'apdf') areaPDF(b.dataset.short === '1').catch((e) => toast('Lỗi tạo PDF: ' + e.message, 5000)); else if (a === 'dday') { S.dfrom = S.dto = b.dataset.d; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); } });
   window.addEventListener('resize', () => { clearTimeout(window._rz); window._rz = setTimeout(() => { if (S.mode !== 'daily' && S.months && S.months.length) drawYear(period()); }, 150); });
   render(); fbConnect();
 }
@@ -2326,7 +2326,7 @@ function renderDaily() {
   const ct = `<div class="card tw"><table><thead><tr><th class="t">Loại</th><th>Số phần</th><th>%Hit</th><th>%Hit ${P.l1.toLowerCase()}</th><th>±</th><th>%Hit ${P.l2.toLowerCase().replace(/^(t\d|cn)/i, (x) => x.toUpperCase())}</th><th>±</th>${ext ? '<th class="sep">SL WTD</th><th>%Hit WTD</th><th>±</th><th class="sep">SL MTD</th><th>%Hit MTD</th><th>±</th>' : ''}</tr></thead><tbody>${keys.map(([l, k]) => `<tr><td class="t">${l}</td><td>${f0(q(r, k))}</td><td><b>${pc(hit(r, k))}</b></td><td>${pc(hit(y, k))}</td><td>${hd(hit(r, k), hit(y, k))}</td><td>${pc(hit(w, k))}</td><td class="${tone('rev', dDiff('online', hit(r, k), hit(w, k)))}">${hd(hit(r, k), hit(w, k))}</td>${ext ? `<td class="sep">${f0(q(wtd, k))}</td><td>${pc(hit(wtd, k))}</td><td>${hd(hit(wtd, k), hit(wtdL, k))}</td><td class="sep">${f0(q(mtd, k))}</td><td>${pc(hit(mtd, k))}</td><td>${hd(hit(mtd, k), hit(mtdL, k))}</td>` : ''}</tr>`).join('')}</tbody></table></div>`;
   const cmiss = P.days.filter((x) => !dGet('dcs', DK(c, x)) && !dGet('dxl', DK(c, x)));
   h += sec('dco', '03', 'Concession (%Hit = số phần / admits)', cmiss.length ? `<span class="miss-s">Thiếu Concession Sales ${missTxt(cmiss)}</span>` : '', ct);
-  let hF = ''; if (isAM) { const AW = areaWeeks(P).W; hF = sec('dfnb', 'F2', `F&B ${ci.short || ci.name} – ${rngLab(AW[0])} so với 2 kỳ liền trước`, `<span class="bts"><button class="btn sm pri" type="button" data-act="apdf">Xuất PDF ${esc(ci.short || ci.name)}</button></span>`, safeSec(() => fnbTables(c, P))); }
+  let hF = ''; if (isAM) { const AW = areaWeeks(P).W; hF = sec('dfnb', 'F2', `F&B ${ci.short || ci.name} – ${rngLab(AW[0])} so với 2 kỳ liền trước`, `<span class="bts"><button class="btn sm" type="button" data-act="apdf" data-short="1">PDF tóm tắt</button><button class="btn sm pri" type="button" data-act="apdf">PDF đầy đủ ${esc(ci.short || ci.name)}</button></span>`, safeSec(() => fnbTables(c, P))); }
   h += sec('dnote', '04', P.single ? 'Nhận định trong ngày' : 'Nhận định trong kỳ', '', notes(dailyNotes(c, P)));
   const tdays = P.single ? monthDays(d) : P.days;
   h += sec('dmonth', '05', P.single ? `Daily CO tháng ${d.slice(5, 7)}/${d.slice(0, 4)}` : `Daily CO ${P.lab}/${d.slice(0, 4)}`, `<span class="bts"><button class="btn sm${S.dhit ? '' : ' on'}" data-act="dq">Số phần</button><button class="btn sm${S.dhit ? ' on' : ''}" data-act="dh">%Hit</button></span>`, monthTable(c, tdays, P));
@@ -2674,15 +2674,15 @@ function PDFReport(title, sub) {
     p(t, o = {}) { const size = o.size || 9.5; const L = d.wrap(t, CW - (o.indent || 0), size, o.bold); L.forEach((ln) => { need(size + 4); d.text(ln, M + (o.indent || 0), y + size, { size, bold: o.bold, color: o.color || C.ink }); y += size + 3.5; }); y += o.gap ?? 3; },
     bullet(t, o = {}) { const size = o.size || 9.5, ind = 15, x0 = o.indent || 0; const L = d.wrap(t, CW - ind - x0, size, o.bold); L.forEach((ln, i) => { need(size + 4); if (!i) d.text(o.mark || '•', M + 2 + x0, y + size, { size, color: o.markColor || C.blue, bold: true }); d.text(ln, M + ind + x0, y + size, { size, bold: o.bold, color: o.color || C.ink }); y += size + 3.5; }); if (o.sub) { const L2 = d.wrap(o.sub, CW - ind - 10, size - 0.5); L2.forEach((ln, i) => { need(size + 3); d.text((i ? '  ' : '→ ') + ln, M + ind + 2, y + size - 0.5, { size: size - 0.5, color: C.mut }); y += size + 3; }); } y += 2; },
     // cols: [{t, w, al}] ; rows: [[cell...]] cell = string | {t, bold, color, fill}
-    table(cols, rows, o = {}) { const size = o.size || 8.5, pad = 4, tw = cols.reduce((a, c) => a + c.w, 0), k = CW / tw; const ws = cols.map((c) => c.w * k);
+    table(cols, rows, o = {}) { const size = o.size || 8.5, pad = 4, tw = cols.reduce((a, c) => a + c.w, 0), k = CW / tw; const ws = cols.map((c) => c.w * k); const grid = (y0, h) => { d.rect(M, y0, CW, h, { stroke: '#B8BEC6', lw: 0.5 }); let gx = M; ws.slice(0, -1).forEach((w) => { gx += w; d.line(gx, y0, gx, y0 + h, { color: '#B8BEC6', lw: 0.5 }); }); };
       const hdr = () => { const HL = cols.map((c, i) => d.wrap(c.t, ws[i] - 2 * pad, size, true)); const hh = Math.max(...HL.map((l) => l.length)) * (size + 2.5) + 2 * pad - 0.5; need(hh + size + 2 * pad); let x = M; d.rect(M, y, CW, hh, { fill: C.head });
-        cols.forEach((c, i) => { const al = c.al || (i ? 'right' : 'left'); HL[i].forEach((ln, j) => d.text(ln, al === 'right' ? x + ws[i] - pad : x + pad, y + pad + size + j * (size + 2.5), { size, bold: true, color: C.ink, align: al === 'right' ? 'right' : 'left' })); x += ws[i]; }); y += hh; d.line(M, y, M + CW, y, { color: C.line }); };
+        cols.forEach((c, i) => { const al = c.al || (i ? 'right' : 'left'); HL[i].forEach((ln, j) => d.text(ln, al === 'right' ? x + ws[i] - pad : x + pad, y + pad + size + j * (size + 2.5), { size, bold: true, color: C.ink, align: al === 'right' ? 'right' : 'left' })); x += ws[i]; }); grid(y, hh); y += hh; };
       hdr(); rows.forEach((r) => { const cells = r.map((v) => (v && typeof v === 'object' ? v : { t: v == null ? '' : String(v) }));
         const lines = cells.map((cl, i) => d.wrap(cl.t, ws[i] - 2 * pad, size, cl.bold)); const rh = Math.max(...lines.map((l) => l.length)) * (size + 2.5) + 2 * pad - 2.5;
         if (y + rh > d.H - M - 16) { newPage(); hdr(); }
         if (cells[0].fill) d.rect(M, y, CW, rh, { fill: cells[0].fill });
         let x = M; cells.forEach((cl, i) => { const al = cols[i].al || (i ? 'right' : 'left'); lines[i].forEach((ln, j) => d.text(ln, al === 'right' ? x + ws[i] - pad : x + pad, y + pad + size + j * (size + 2.5), { size, bold: cl.bold, color: cl.color || C.ink, align: al === 'right' ? 'right' : 'left' })); x += ws[i]; });
-        y += rh; d.line(M, y, M + CW, y, { color: C.line, lw: 0.4 }); }); y += 10; },
+        grid(y, rh); y += rh; }); y += 10; },
     gap(h) { y += h; }, C,
     save() { const n = d.pages.length; d.pages.forEach((pg, i) => { pg.ops.push(`BT /F1 8 Tf 0.42 0.44 0.47 rg ${(d.W - M - d.width(`${i + 1}/${n}`, 8)).toFixed(2)} 20 Td <${[...`${i + 1}/${n}`].map((ch) => (PDF_FONTS.reg.map[ch.codePointAt(0)] || [0])[0].toString(16).padStart(4, '0')).join('')}> Tj ET`); }); return d.save(); },
   };
@@ -2986,7 +2986,7 @@ function fnbWrap(MD, SM) { const [A, B] = MD.X; const out = []; if (!A || !B) re
   if (kp) out.push(`SPP ${cmpV(A.M.spp, B.M.spp, 'nghìn đ/khách')} so với kỳ trước; phần tác động lớn hơn là ${Math.abs(kp.eSrt) >= Math.abs(kp.eSpt) ? `SRT AD (${dp1(kp.eSrt)} nghìn đ/khách)` : `SPT (${dp1(kp.eSpt)} nghìn đ/khách)`}.`);
   if ([A.M.spt, B.M.spt].every(fin)) out.push(`SPT ${cmpV(A.M.spt, B.M.spt, 'nghìn đ/giao dịch')}${[A.upt, B.upt].every(fin) ? `; số phần mỗi giao dịch ${fR(B.upt)} → ${fR(A.upt)}` : ''}${[A.avgP, B.avgP].every(fin) ? `; giá bình quân mỗi phần ${fR(B.avgP)} → ${fR(A.avgP)} nghìn đ` : ''}.`);
   if (K.mx) out.push(`Cơ cấu Extra/thường: giá bình quân combo 1-2 ${fR(K.mx.avgB)} → ${fR(K.mx.avgA)} nghìn đ, tác động ${dp1(K.mx.spp)} nghìn đ/khách${K.shift && K.shift.moved >= 0.05 ? `; ${fR(K.shift.moved)} combo/100 khách chuyển từ quầy sang mua online` : ''}.`);
-  if (cs.good) out.push(`Bán tại quầy: ${cs.good === 'good' ? 'giữ được hoặc tốt hơn kỳ trước' : cs.good === 'mix' ? 'số lượng giữ được nhưng khách mua combo nhỏ hơn' : cs.good === 'open' ? `SRT AD tại quầy giảm nhưng khách vé online tăng, cần theo dõi khách vé online có ghé quầy mua bắp nước không${[A.onVisit, B.onVisit].every(fin) && (A.onVisit > 0 || B.onVisit > 0) ? ` (ít nhất ${f0(B.onVisit)} → ${f0(A.onVisit)} GD tại quầy của khách vé online${[A.onVisitSh, B.onVisitSh].every(fin) ? `, tương đương ${pc(B.onVisitSh)} → ${pc(A.onVisitSh)} khách vé online chưa mua F&B online` : ''}: ${A.onVisitSh < B.onVisitSh - 0.005 ? 'khách vé online ghé quầy ít đi' : A.onVisitSh > B.onVisitSh + 0.005 ? 'khách vé online ghé quầy nhiều hơn' : 'tỷ lệ ghé quầy gần như không đổi'})` : ''}` : 'yếu hơn kỳ trước'}${[cs.exA, cs.exB].every(fin) ? `; %Extra combo 1-2 ${pc(cs.exB)} → ${pc(cs.exA)}` : ''}.`);
+  if (cs.good) out.push(`Bán tại quầy: ${cs.good === 'good' ? 'giữ được hoặc tốt hơn kỳ trước' : cs.good === 'mix' ? 'số lượng giữ được nhưng khách mua combo nhỏ hơn' : cs.good === 'open' ? `SRT AD tại quầy giảm nhưng khách vé online tăng, cần theo dõi khách vé online có ghé quầy mua bắp nước không` : 'yếu hơn kỳ trước'}${[cs.exA, cs.exB].every(fin) ? `; %Extra combo 1-2 ${pc(cs.exB)} → ${pc(cs.exA)}` : ''}.`);
   if (fin(ch.dk)) out.push(`Kênh online: khách mua vé online ${cmpP(A.onSh, B.onSh)}${fin(ch.dOn) ? `; F&B mua online ${dp1(ch.dOn)}, tại quầy ${dp1(ch.dOff)} nghìn đ/khách` : ''}.`);
   return out; }
 const SUM_HEAD = ['Hạng mục', 'Kỳ này', 'Kỳ trước', '±', 'Đánh giá', 'Việc cần làm'];
@@ -3090,7 +3090,7 @@ function areaKey(A, D) {
   return K;
 }
 const pdfNotes = (R, N) => N.forEach((x) => { if (typeof x === 'string') return R.bullet(x, { size: 9 }); R.bullet(x.t, { size: 9 }); (x.sub || []).forEach((y) => R.bullet(y, { size: 8.5, indent: 14, mark: '–', markColor: '#6B7078' })); });
-async function areaPDF() {
+async function areaPDF(short) {
   const fm = S._fnbM; if (!fm || !fm.MD) return; const { c, MD } = fm; const st = S._area; const z = st ? st.D.find((q) => q.z.c === c) : null; const nm = CI[c] ? CI[c].short || CI[c].name : c; toast('Đang tạo PDF…');
   const yr = MD.W[0][0].slice(0, 4); const R = PDFReport(`Báo cáo F&B ${nm} – ${MD.labs[0]}/${yr}`, `So với 2 kỳ liền trước (${MD.labs[1]}, ${MD.labs[2]})${st ? ` và ${st.A.lmLab.replace('TB', 'bình quân')}` : ''}`);
   const ms = MD.W.map((d, i) => { const m = dMiss(c, d); return m.any.length || m.cs.length ? `${['Kỳ này', 'Kỳ trước', 'Kỳ trước nữa'][i]}: ${m.any.length ? `chưa có số ${missTxt(m.any)}` : ''}${m.any.length && m.cs.length > m.any.length ? '; ' : ''}${m.cs.length > m.any.length ? `thiếu Concession Sales ${missTxt(m.cs.filter((x) => !m.any.includes(x)))}` : ''}` : ''; }).filter(Boolean);
@@ -3101,18 +3101,18 @@ async function areaPDF() {
     const row = (lab, v, l, f, isP, f2) => { const dd = (x, y) => (!fin(x) || !fin(y) ? '–' : isP ? dpt(x - y) : dp(x / y - 1)); return [lab, { t: f(v[0]), bold: true }, f(v[1]), f(v[2]), dd(v[0], v[1]), f(l), dd(v[0], l), fl(v, f2, isP ? 0.005 : 0.2)]; };
     R.table([{ t: 'Chỉ tiêu', w: 110 }, { t: A.labs[0], w: 55 }, { t: A.labs[1], w: 55 }, { t: A.labs[2], w: 55 }, { t: '± kỳ trước', w: 50 }, { t: A.lmLab, w: 55 }, { t: '± TB tháng', w: 50 }, { t: 'Đánh giá', w: 80, al: 'left' }],
       [row('SPP (nghìn đ/khách)', d.spp, d.sppL, fR, false, d.sppDown2), row('%Extra combo 1-2 tại quầy', d.ex, d.exL, (v) => pc(v), true, d.exDown2), row('%U22 combo 1-2 tại quầy', d.u22 || [], d.u22L, (v) => pc(v), true, false)]);
-    d.causes.slice(0, 5).forEach((x) => R.bullet(x.t, { size: 9 })); R.gap(4); }
+    if (short) { if (d.causes[0]) R.p(d.causes[0].t, { size: 9 }); } else d.causes.slice(0, 5).forEach((x) => R.bullet(x.t, { size: 9 })); R.gap(4); }
   // 2. các bảng F&B (trừ top item), mỗi bảng kèm nhận định
   MD.T.filter((t) => !/^top/.test(t.key)).forEach((t) => { R.h3(t.title); const n = t.head.length; const cols = t.head.map((x, i) => (t.wide ? { t: x, w: i < 2 ? 120 : 55, al: i < 2 ? 'left' : undefined } : { t: i ? x : x || 'Chỉ tiêu', w: i ? (n >= 9 ? 45 : n > 6 ? 57 : 62) : n > 6 ? 110 : 180 }));
     R.table(cols, t.rows.map((r) => (r.sec ? [{ t: r.sec, bold: true, fill: '#F5F6F8' }, ...Array(n - 1).fill({ t: '', fill: '#F5F6F8' })] : r.cells.map((x, i) => ({ t: x.t, fill: /ron/.test(r.cls || '') ? '#F1F5FB' : /roff/.test(r.cls || '') ? '#FBF7EF' : undefined, bold: !!x.b || r.cls === 'tot', color: x.tone === 'bad' ? R.C.red : x.tone === 'good' ? R.C.green : null })))), { size: 8 });
-    if (t.notes.length) { if (t.noteTitle) R.p(t.noteTitle, { size: 9, bold: true }); pdfNotes(R, t.notes); } R.gap(4); });
+    if (t.notes.length) { if (short) { const it = t.notes.map((x) => (typeof x === 'string' ? x : x.t)); const k = it.filter((x) => /^Kết luận/.test(x)); R.p((k.length ? k : [it[0]]).join(' '), { size: 9 }); } else { if (t.noteTitle) R.p(t.noteTitle, { size: 9, bold: true }); pdfNotes(R, t.notes); } } R.gap(4); });
   // 3. tổng hợp
   const SM = fm.SM || fnbSum(c, MD, z ? z.d : null);
-  const WR = fnbWrap(MD, SM); R.h('Tổng kết F&B'); pdfNotes(R, WR); R.gap(4);
-  if (SM.length) { R.h3('Tổng hợp chỉ số và việc cần làm'); const col = (x) => (x === 'bad' ? R.C.red : x === 'good' ? R.C.green : null);
-    R.table([{ t: SUM_HEAD[0], w: 130 }, { t: SUM_HEAD[1], w: 50 }, { t: SUM_HEAD[2], w: 50 }, { t: SUM_HEAD[3], w: 45 }, { t: SUM_HEAD[4], w: 65, al: 'left' }, { t: SUM_HEAD[5], w: 170, al: 'left' }],
-      SM.map((r) => [r.item, { t: r.now, bold: true }, r.prev, { t: r.d, color: col(r.dTone) }, { t: r.ev.t, bold: !!r.ev.tone, color: col(r.ev.tone) }, r.act]), { size: 8 }); }
-  const bytes = R.save(); const blob = new Blob([bytes], { type: 'application/pdf' }); const name = `Bao_cao_FnB_${c}_${MD.W[0][0]}_${MD.W[0][MD.W[0].length - 1]}.pdf`; window.__pdf = blob;
+  const WR = fnbWrap(MD, SM); R.h('Tổng kết F&B'); if (short) WR.forEach((x) => { R.p(x, { size: 9 }); R.gap(2); }); else pdfNotes(R, WR); R.gap(4);
+  if (SM.length) { R.h3('Tổng hợp chỉ số'); const col = (x) => (x === 'bad' ? R.C.red : x === 'good' ? R.C.green : null);
+    R.table([{ t: SUM_HEAD[0], w: 130 }, { t: SUM_HEAD[1], w: 50 }, { t: SUM_HEAD[2], w: 50 }, { t: SUM_HEAD[3], w: 45 }, { t: SUM_HEAD[4], w: 90, al: 'left' }],
+      SM.map((r) => [r.item, { t: r.now, bold: true }, r.prev, { t: r.d, color: col(r.dTone) }, { t: r.ev.t, bold: !!r.ev.tone, color: col(r.ev.tone) }]), { size: 8 }); }
+  const bytes = R.save(); const blob = new Blob([bytes], { type: 'application/pdf' }); const name = `Bao_cao_FnB_${c}_${MD.W[0][0]}_${MD.W[0][MD.W[0].length - 1]}${short ? '_tom_tat' : ''}.pdf`; window.__pdf = blob;
   if (window.claude && window.claude.use) { const dl = await window.claude.use('downloads').catch(() => null); if (dl) { try { await dl.save({ filename: name, data: blob }); toast('Đã xuất ' + name); } catch (e) { toast('Chưa tải được file: ' + (e.message || e), 5000); } return; } }
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); toast('Đã xuất ' + name);
 }
