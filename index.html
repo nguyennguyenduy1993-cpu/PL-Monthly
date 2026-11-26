@@ -2286,7 +2286,7 @@ function renderDaily() {
   if (!dAgg(c, dRange(S.dfrom, S.dto))) { const t = S.dfrom === S.dto ? `ngày ${dLab(S.dto)}/${S.dto.slice(0, 4)}` : `từ ${dShort(S.dfrom)} đến ${dShort(S.dto)}/${S.dto.slice(0, 4)}`; $('#main').innerHTML = h + empty(`Chưa upload data ${t}. Ngày gần nhất có số: ${dLab(last)}/${last.slice(0, 4)}.`, ['up', 'Tải dữ liệu']); return; }
   const P = dPeriod(c), d = P.to, r = dAgg(c, P.days), y = dAgg(c, P.b1), w = dAgg(c, P.b2);
   const isAM = window.ACC && window.ACC.role === 'AM'; let hA = '';
-  if (isAM) { const AW = areaWeeks(P).W; hA = sec('darea', '00', `F&B khu vực 6 rạp – ${rngLab(AW[0])}`, `<span class="bts"><button class="btn sm pri" type="button" data-act="apdf">Xuất báo cáo PDF</button></span>`, areaSection(P)); }
+  if (isAM) { const AW = areaWeeks(P).W; hA = sec('darea', '00', `F&B khu vực 6 rạp – ${rngLab(AW[0])}`, '', areaSection(P)); }
   const ext = P.single; // 1 ngày: thêm WTD và MTD
   const ws = weekStart(d), wD = dRange(ws, d), wtd = ext ? dAgg(c, wD) : null, wtdL = ext ? dAgg(c, wD.map((x) => dAdd(x, -7))) : null;
   const md = monthDays(d).filter((x) => x <= d), mtd = ext ? dAgg(c, md) : null, mtdL = ext ? dAgg(c, lmDays(md)) : null;
@@ -2313,7 +2313,7 @@ function renderDaily() {
   const ct = `<div class="card tw"><table><thead><tr><th class="t">Loại</th><th>Số phần</th><th>%Hit</th><th>%Hit ${P.l1.toLowerCase()}</th><th>±</th><th>%Hit ${P.l2.toLowerCase().replace(/^(t\d|cn)/i, (x) => x.toUpperCase())}</th><th>±</th>${ext ? '<th class="sep">SL WTD</th><th>%Hit WTD</th><th>±</th><th class="sep">SL MTD</th><th>%Hit MTD</th><th>±</th>' : ''}</tr></thead><tbody>${keys.map(([l, k]) => `<tr><td class="t">${l}</td><td>${f0(q(r, k))}</td><td><b>${pc(hit(r, k))}</b></td><td>${pc(hit(y, k))}</td><td>${hd(hit(r, k), hit(y, k))}</td><td>${pc(hit(w, k))}</td><td class="${tone('rev', dDiff('online', hit(r, k), hit(w, k)))}">${hd(hit(r, k), hit(w, k))}</td>${ext ? `<td class="sep">${f0(q(wtd, k))}</td><td>${pc(hit(wtd, k))}</td><td>${hd(hit(wtd, k), hit(wtdL, k))}</td><td class="sep">${f0(q(mtd, k))}</td><td>${pc(hit(mtd, k))}</td><td>${hd(hit(mtd, k), hit(mtdL, k))}</td>` : ''}</tr>`).join('')}</tbody></table></div>`;
   const cmiss = P.days.filter((x) => !dGet('dcs', DK(c, x)) && !dGet('dxl', DK(c, x)));
   h += sec('dco', '03', 'Concession (%Hit = số phần / admits)', cmiss.length ? `<span class="miss-s">Thiếu Concession Sales ${missTxt(cmiss)}</span>` : '', ct);
-  if (isAM) { const AW = areaWeeks(P).W; h += sec('dfnb', '03b', `F&B ${ci.short || ci.name} – ${rngLab(AW[0])} so với 2 kỳ liền trước`, '', fnbTables(c, P)); }
+  if (isAM) { const AW = areaWeeks(P).W; h += sec('dfnb', '03b', `F&B ${ci.short || ci.name} – ${rngLab(AW[0])} so với 2 kỳ liền trước`, `<span class="bts"><button class="btn sm pri" type="button" data-act="apdf">Xuất PDF ${esc(ci.short || ci.name)}</button></span>`, fnbTables(c, P)); }
   h += sec('dnote', '04', P.single ? 'Nhận định trong ngày' : 'Nhận định trong kỳ', '', notes(dailyNotes(c, P)));
   const tdays = P.single ? monthDays(d) : P.days;
   h += sec('dmonth', '05', P.single ? `Daily CO tháng ${d.slice(5, 7)}/${d.slice(0, 4)}` : `Daily CO ${P.lab}/${d.slice(0, 4)}`, `<span class="bts"><button class="btn sm${S.dhit ? '' : ' on'}" data-act="dq">Số phần</button><button class="btn sm${S.dhit ? ' on' : ''}" data-act="dh">%Hit</button></span>`, monthTable(c, tdays, P));
@@ -2697,10 +2697,25 @@ function fnbX(c, days) {
     const isOn = (i) => /online/i.test(i.cls || ''); X.onNet = L.filter(isOn).reduce((a, i) => a + i.net, 0); X.offNet = tot - X.onNet;
     X.cb = {}; L.filter((i) => /^CO (Combo|Online)$/i.test(i.cls || '') && /combo/i.test(i.item)).forEach((i) => { const t = comboGroup(i.item), ch = isOn(i) ? 'Online' : 'Quầy'; const k = t + '|' + ch; const e = (X.cb[k] = X.cb[k] || { t, ch, qty: 0, net: 0 }); e.qty += i.qty; e.net += i.net; });
     const ex = (pred) => { const A = L.filter((i) => pred(i) && /combo ?[12]\b/i.test(i.item)); const q = A.reduce((a, i) => a + i.qty, 0), e = A.filter((i) => /extra/i.test(i.item)).reduce((a, i) => a + i.qty, 0); return q ? e / q : null; };
-    X.exOn = ex((i) => /^CO Online$/i.test(i.cls)); X.items = o.items; }
+    X.exOn = ex((i) => /^CO Online$/i.test(i.cls)); X.items = o.items;
+    const on12 = L.filter((i) => isOn(i) && /combo ?[12]\b/i.test(i.item)), q12 = on12.reduce((a, i) => a + i.qty, 0); X.cbOnP = q12 ? on12.reduce((a, i) => a + i.net, 0) / q12 : null; }
+  if (o.con) { const pr = (ks) => { const q = ks.reduce((a, k) => a + (o.co[k] || 0), 0); return q ? ks.reduce((a, k) => a + (o.con[k] || 0), 0) / q : null; };
+    X.cbOffP12 = pr(['CB1', 'CB2', 'CB1Ex', 'CB2Ex']); X.exP = pr(['CB1Ex', 'CB2Ex']); X.stdP = pr(['CB1', 'CB2']); }
   const on = o.onAdm, off = fin(on) ? o.adm - on : null; X.onSh = fin(on) ? on / o.adm : null;
   X.onPart = fin(X.onNet) ? X.onNet / o.adm : null; X.offPart = fin(X.offNet) ? X.offNet / o.adm : null; X.onNetSh = fin(X.onNet) && X.net ? X.onNet / X.net : null;
-  return X; }
+  X.sppOn = fin(X.onNet) && on ? X.onNet / on : null; X.sppOff = fin(X.offNet) && off > 0 ? X.offNet / off : null;
+  X.ctr = ctrX(c, X); return X; }
+
+// menu gợi ý online theo file Online CO Combo – Suggestion (mã rạp: QTR, TCH, NVQ, TRC, PHI, BRV)
+const ONLINE_MENU = { QT: { lv: 'STD', sg: ['Cbo 1', 'Cbo 2', 'Cbo 3', 'Cbo 4'] }, TC: { lv: 'STD', sg: ['Cbo 1', 'Snacking Cbo 2', 'Cbo 3', 'Cbo 4'] }, NVQ: { lv: 'STD', sg: ['Cbo 1', 'Snacking Cbo 2', 'Cbo 3', 'Cbo 4'] },
+  TrC: { lv: 'STD', sg: ['Cbo 1', 'Snacking Cbo 2', 'Cbo 3', 'Cbo 4'] }, PHI: { lv: 'Extra', sg: ['Cbo 1 Extra', 'Snacking Cbo 2', 'Cbo 3', 'Cbo 4'] }, BRI: { lv: 'Extra', sg: ['Cbo 1 Extra', 'Cbo 2 Extra', 'Cbo 3', 'Cbo 4'] } };
+// bán tại quầy theo nhóm: số phần trên 100 khách mua vé tại quầy, giá/phần (khi có Concession Sales)
+const CTR_G = [['Combo Extra 1-2', ['CB1Ex', 'CB2Ex'], 'cb'], ['Combo thường 1-2', ['CB1', 'CB2'], 'cb'], ['Combo 3-4', ['Combo3', 'Combo4'], 'cb'], ['Combo khác (MVCB, Snacking, Food)', ['MVCB', 'Snacking', 'Food CB', 'Combo khác'], 'cb'],
+  ['Bắp lẻ', ['Pop'], 'le'], ['Nước lẻ', ['Drink'], 'le'], ['Đồ chiên', ['Đồ chiên'], 'le'], ['Cinemunch tại quầy', ['cm:Combo', 'cm:Food', 'cm:Drink'], 'cm']];
+function ctrX(c, x) { const o = x.o, off = fin(o.onAdm) ? o.adm - o.onAdm : null; if (!(off > 0)) return null; const { co, cm } = dCols(c); const has = new Set(co.concat(cm.map((k) => 'cm:' + k), ['Combo khác']));
+  const G = CTR_G.map(([l, ks, t]) => { const K = ks.filter((k) => has.has(k)); if (!K.length) return null; const q = K.reduce((a, k) => a + (coPick(c, o.co, k) || 0), 0);
+    const n = o.con ? K.reduce((a, k) => a + (o.con[k] || 0) + (cm.length ? 0 : o.con['alt:' + k] || 0), 0) : null; return { l, t, q, n, r: (q / off) * 100, p: fin(n) && q ? n / q : null }; }).filter(Boolean);
+  return { off, G }; }
 
 const CBT = { standard: 'Combo thường', extra: 'Combo Extra', u22: 'Combo U22', group: 'Group combo' };
 /* Bộ bảng F&B của 1 rạp qua 3 kỳ (kỳ này → lùi 2 kỳ), cùng cấu trúc mục CO của P&L. Mỗi bảng có nhận định riêng để in PDF */
@@ -2752,15 +2767,55 @@ function fnbModel(c, W) {
       if (big.length) N4.push(`Dịch chuyển lớn nhất: ${big.map((x) => `${CBT[x.t]} · ${x.ch} ${pc(x.s0)} → ${pc(x.s1)}`).join('; ')}.`);
       T.push({ key: 'shift', title: 'Dịch chuyển cơ cấu combo (so với kỳ trước)', head: ['Loại · kênh', 'Số phần kỳ này', '% số phần', 'Số phần kỳ trước', '% số phần', '±', 'Giá/phần kỳ này', 'Giá/phần kỳ trước', '% giá', 'Tác động cơ cấu lên giá BQ'], rows: rows4, notes: N4 }); }
   }
-  // 5. chuyển đổi offline → online
-  { const rows = [R('% khách mua vé online', 'p', (x) => x.onSh), R('% doanh thu F&B qua kênh online', 'p', (x) => x.onNetSh), R('F&B bán online / khách (nghìn đ)', 'r', (x) => x.onPart), R('F&B bán tại quầy / khách (nghìn đ)', 'r', (x) => x.offPart),
-      R('Combo online / 100 khách online', 'h', (x) => x.M.on), R('Combo tại quầy / 100 khách quầy', 'h', (x) => x.M.off), R('%Extra combo 1-2 online', 'p', (x) => x.exOn), R('%Extra combo 1-2 tại quầy', 'p', (x) => x.M.ex)];
-    const N = []; if (A && B && [A.onSh, B.onSh].every(fin)) { const dk = A.onSh - B.onSh, dn = [A.onNetSh, B.onNetSh].every(fin) ? A.onNetSh - B.onNetSh : null;
-      N.push(`Khách mua vé online ${pc(B.onSh)} → ${pc(A.onSh)} (${dk >= 0 ? '+' : '−'}${fR(Math.abs(dk) * 100)} điểm)${fin(dn) ? `; tỷ trọng doanh thu F&B qua online ${pc(B.onNetSh)} → ${pc(A.onNetSh)}` : ''}.`);
-      if (fin(dn) && dk > 0.01) N.push(dn < dk / 2 ? 'Khách chuyển sang mua vé online nhưng chưa mua F&B online tương ứng. Nhóm này không qua quầy vé nên ít được mời combo và nâng size, cần người mời ở cửa soát vé.' : 'Khách chuyển kênh vẫn mua F&B qua online, chưa thấy mất doanh thu do đổi kênh.');
-      if ([A.M.on, B.M.on].every(fin)) N.push(`Combo online đạt ${fR(A.M.on * 100)} phần/100 khách online (${A.M.on >= B.M.on ? '+' : '−'}${fR(Math.abs(A.M.on - B.M.on) * 100)}); combo tại quầy ${fR(A.M.off * 100)} phần/100 khách quầy.`); }
-    T.push({ key: 'conv', title: 'Chuyển đổi khách từ tại quầy sang online', head, rows, notes: N }); }
-  // 6. top 10 combo + top 10 món
+  // 5. bán tại quầy: dịch chuyển giữa các loại combo và từ combo sang bán lẻ (trên 100 khách mua vé tại quầy)
+  let ctrS = null;
+  { const CX = X.map((x) => (x ? x.ctr : null));
+    if (CX[0]) { const gv = (i, l) => (CX[i] ? CX[i].G.find((q) => q.l === l) || null : null); const sub = (i, ts) => (CX[i] ? CX[i].G.filter((g) => ts.includes(g.t)).reduce((a, g) => a + g.r, 0) : null);
+      const imp = (l) => { const a = gv(0, l), b = gv(1, l); if (!a || !b) return null; const p = fin(b.p) ? b.p : a.p; return fin(p) ? ((a.r - b.r) / 100) * p : null; };
+      const mkRow = (lab, v, price, im, cls) => { const d1 = [v[0], v[1]].every(fin) ? v[0] - v[1] : null, d2 = [v[0], v[2]].every(fin) ? v[0] - v[2] : null;
+        return { cls, cells: [{ t: lab }, { t: fR(v[0]), b: 1 }, { t: fR(v[1]) }, { t: fR(v[2]) }, { t: fin(d1) ? dp1(d1) : '–', tone: tone('num', d1), sep: 1 }, { t: fin(d2) ? dp1(d2) : '–', tone: tone('num', d2) }, { t: fR(price) }, { t: fin(im) ? dp1(Math.abs(im) < 0.05 ? 0 : im) : '–', tone: tone('num', im) }] }; };
+      const rows = []; let impT = null; const addImp = (v) => { if (fin(v)) impT = (impT || 0) + v; };
+      [['Combo', ['cb']], ['Bán lẻ', ['le']], ['Cinemunch', ['cm']]].forEach(([sl, ts]) => { const G = CX[0].G.filter((g) => ts.includes(g.t) && [0, 1, 2].some((i) => (gv(i, g.l) || {}).q)); if (!G.length) return;
+        rows.push(secR(sl)); let si = null; G.forEach((g) => { const im = imp(g.l); addImp(im); if (fin(im)) si = (si || 0) + im; rows.push(mkRow(g.l, [0, 1, 2].map((i) => (gv(i, g.l) || {}).r), g.p, im)); });
+        if (G.length > 1) { const qA = G.reduce((a, g) => a + g.q, 0), nA = G.every((g) => fin(g.n)) ? G.reduce((a, g) => a + g.n, 0) : null; rows.push(mkRow(`Tổng ${sl.toLowerCase()}`, [0, 1, 2].map((i) => sub(i, ts)), qA && fin(nA) ? nA / qA : null, si, 'tot')); } });
+      rows.push(secR('Doanh thu')); rows.push(mkRow('DT F&B tại quầy / khách quầy (nghìn đ)', X.map((x) => (x ? x.sppOff : null)), null, impT, 'tot'));
+      const N = []; const r = (l, i) => (gv(i, l) || {}).r; const eA = r('Combo Extra 1-2', 0), eB = r('Combo Extra 1-2', 1), sA = r('Combo thường 1-2', 0), sB = r('Combo thường 1-2', 1);
+      const cA = sub(0, ['cb']), cB = sub(1, ['cb']), lA = sub(0, ['le']), lB = sub(1, ['le']); const exSh = (e, s2) => (fin(e) && fin(s2) && e + s2 ? e / (e + s2) : null);
+      if ([eA, eB, sA, sB].every(fin)) { const dE = eA - eB, dS = sA - sB;
+        if (dE < -0.3 && dS > 0.3) N.push(`Extra giảm ${fR(-dE)} phần/100 khách quầy, combo thường tăng ${fR(dS)}: khách hạ từ Extra xuống combo thường${[A.exP, A.stdP].every(fin) ? `, mỗi phần thấp hơn ${fR(A.exP - A.stdP)} nghìn đ` : ''}.`);
+        else if (dE < -0.3 && dS < -0.3) N.push(`Extra (${dp1(dE)}) và combo thường (${dp1(dS)}) cùng giảm trên 100 khách quầy: ít khách mua combo hơn, không phải do đổi loại combo.`);
+        else if (dE > 0.3 && dS <= 0) N.push(`Extra tăng ${fR(dE)} phần/100 khách quầy, combo thường giảm ${fR(-dS)}: nâng size tại quầy đang có kết quả.`);
+        else N.push(`Cơ cấu Extra/combo thường gần như không đổi: Extra ${fR(eB)} → ${fR(eA)}, combo thường ${fR(sB)} → ${fR(sA)} phần/100 khách quầy.`); }
+      if ([cA, cB, lA, lB].every(fin)) { const dC = cA - cB, dL = lA - lB;
+        const upG = CX[0].G.filter((g) => g.t === 'le').map((g) => ({ l: g.l, d: g.r - (r(g.l, 1) || 0) })).sort((p, q) => q.d - p.d)[0];
+        if (dC < -0.3 && dL > 0.3) N.push(`Combo tại quầy giảm ${fR(-dC)} phần/100 khách, bán lẻ tăng ${fR(dL)}${upG && upG.d > 0 ? ` (nhiều nhất ở ${upG.l.toLowerCase()})` : ''}: khách chuyển từ combo sang mua lẻ.`);
+        else if (dC < -0.3) N.push(`Combo tại quầy giảm ${fR(-dC)} phần/100 khách nhưng bán lẻ không tăng: khách bỏ hẳn F&B, không chuyển sang mua lẻ.`);
+        else if (dC > 0.3 && dL < -0.3) N.push(`Combo tăng ${fR(dC)}, bán lẻ giảm ${fR(-dL)} phần/100 khách quầy: khách mua lẻ đang được chuyển sang combo.`); }
+      const exA = exSh(eA, sA), exB = exSh(eB, sB); const volOk = fin(cA) && fin(cB) ? cA - cB >= -0.3 && (!fin(impT) || impT >= -0.1) : null, exOk = !fin(exA) || !fin(exB) || exA - exB >= -0.01;
+      const good = volOk === null ? null : volOk && exOk ? 'good' : volOk ? 'mix' : 'bad';
+      if (good !== null) N.push(`Kết luận bán tại quầy: ${good === 'good' ? 'giữ được hoặc tốt hơn kỳ trước' : good === 'mix' ? 'số lượng bán giữ được nhưng khách đang mua combo nhỏ hơn (Extra giảm)' : 'yếu hơn kỳ trước'}. Combo ${fR(cB)} → ${fR(cA)} phần/100 khách quầy${[exA, exB].every(fin) ? `, %Extra combo 1-2 ${pc(exB)} → ${pc(exA)}` : ''}${fin(impT) ? `, tác động lên doanh thu quầy ${dp1(impT)} nghìn đ/khách quầy` : ''}.`);
+      if (!A.items) N.push('Giá/phần và tác động doanh thu cần đủ Concession Sales của kỳ này và kỳ trước.');
+      ctrS = { good, cA, cB, lA, lB, eA, eB, sA, sB, exA, exB, impT };
+      T.push({ key: 'ctr', title: 'Bán tại quầy: chuyển dịch giữa các loại combo và sang bán lẻ', head: ['Nhóm (phần/100 khách mua vé tại quầy)', `Kỳ này ${labs[0]}`, `Kỳ trước ${labs[1]}`, `Kỳ trước nữa ${labs[2]}`, '± kỳ trước', '± kỳ trước nữa', 'Giá/phần kỳ này (nghìn đ)', 'Tác động lên DT quầy (nghìn đ/khách quầy)'], rows, notes: N }); } }
+  // 6. dịch chuyển kênh online: khách qua quầy, SPP theo kênh, menu online
+  let chS = null;
+  { const ML = ONLINE_MENU[c];
+    const rows = [R('% khách mua vé online', 'p', (x) => x.onSh), R('% khách mua vé tại quầy', 'p', (x) => (fin(x.onSh) ? 1 - x.onSh : null)), R('DT F&B online / khách online (nghìn đ)', 'r', (x) => x.sppOn), R('DT F&B tại quầy / khách quầy (nghìn đ)', 'r', (x) => x.sppOff),
+      R('Combo online / 100 khách online', 'h', (x) => x.M.on), R('Combo tại quầy / 100 khách quầy', 'h', (x) => x.M.off), R('Giá/phần combo 1-2 online (nghìn đ)', 'r', (x) => x.cbOnP), R('Giá/phần combo 1-2 tại quầy (nghìn đ)', 'r', (x) => x.cbOffP12),
+      R('%Extra combo 1-2 online', 'p', (x) => x.exOn), R('%Extra combo 1-2 tại quầy', 'p', (x) => x.M.ex)];
+    const N = [];
+    if (A && B && [A.onSh, B.onSh].every(fin)) { const dk = A.onSh - B.onSh, nd = A.days.length; chS = { dk };
+      N.push(`Khách mua vé online ${pc(B.onSh)} → ${pc(A.onSh)} (${dk >= 0 ? '' : '-'}${fR(Math.abs(dk) * 100)} điểm), khách qua quầy vé còn ${pc(1 - A.onSh)}${dk > 0.005 ? `: mỗi ngày ít hơn khoảng ${f0((dk * A.o.adm) / nd)} khách được mời combo và nâng size trực tiếp` : ''}.`);
+      if ([A.sppOn, A.sppOff, B.sppOn, B.sppOff].every(fin)) { const mix = dk * (B.sppOn - B.sppOff), inOn = A.onSh * (A.sppOn - B.sppOn), inOff = (1 - A.onSh) * (A.sppOff - B.sppOff); Object.assign(chS, { mix, inOn, inOff });
+        N.push(`SPP ${dp1(mix + inOn + inOff)} nghìn đ so với kỳ trước, tách theo nguồn: do khách dịch chuyển kênh ${dp1(mix)}; do bán tại quầy ${dp1(inOff)}; do bán online ${dp1(inOn)}.`);
+        if (B.sppOn < B.sppOff) N.push(`Khách online mang về ${fR(B.sppOn)} nghìn đ F&B/khách, khách quầy ${fR(B.sppOff)}. Mỗi 1 điểm % khách chuyển sang online làm SPP giảm khoảng ${fR((B.sppOff - B.sppOn) / 100)} nghìn đ nếu không bù bằng bán online.`); }
+      else if ([A.M.off, B.M.off].every(fin) && dk > 0.005) N.push(`Với ${fR(B.M.off * 100)} combo/100 khách quầy, phần khách chuyển sang online làm quầy mất khoảng ${f0((dk * A.o.adm * B.M.off) / nd)} combo/ngày.`);
+      if (ML) { if (ML.lv === 'STD') N.push(`Menu gợi ý online của rạp chỉ có combo thường (${ML.sg.join(', ')}).${[A.exP, A.cbOnP].every(fin) ? ` Combo 1-2 online bình quân ${fR(A.cbOnP)} nghìn đ/phần, combo Extra tại quầy ${fR(A.exP)}: khách vốn mua Extra ở quầy khi chuyển sang đặt online chỉ còn combo thường, mỗi phần thấp hơn khoảng ${fR(A.exP - A.cbOnP)} nghìn đ.` : ''}${fin(A.M.ex) ? ` Tại quầy, ${pc(A.M.ex)} combo 1-2 đang là Extra.` : ''}`);
+        else N.push(`Menu gợi ý online đã có combo Extra (${ML.sg.join(', ')})${[A.exOn, A.M.ex].every(fin) ? `; %Extra combo 1-2 online ${pc(A.exOn)}, tại quầy ${pc(A.M.ex)}` : ''}.`); }
+      if ([A.M.off, B.M.off].every(fin)) { const d = A.M.off - B.M.off; chS.offD = d; N.push(`Combo tại quầy ${fR(B.M.off * 100)} → ${fR(A.M.off * 100)} phần/100 khách quầy: ${d > 0.003 ? 'tỷ lệ bán tại quầy tăng, quầy đang bán tốt hơn trên mỗi khách' : d >= -0.003 ? `tỷ lệ bán tại quầy giữ nguyên${dk > 0.005 ? ', doanh thu quầy giảm (nếu có) là do khách qua quầy ít đi' : ''}` : 'tỷ lệ bán tại quầy cũng giảm, không chỉ do ít khách qua quầy'}.`); }
+      if ([A.M.on, B.M.on].every(fin)) N.push(`Combo online ${fR(B.M.on * 100)} → ${fR(A.M.on * 100)} phần/100 khách online.`); }
+    T.push({ key: 'conv', title: 'Dịch chuyển kênh online và tác động lên doanh thu F&B', head, rows, notes: N }); }
+  // 7. top 10 combo + top 10 món
   if (A && A.items) { const T0 = A.net; const iq = (x, n, f) => (x && x.items ? (x.items[n] ? x.items[n][f] : 0) : null);
     const mk = (list, title, key) => { const rows = list.map((i, j) => ({ cells: [{ t: `${j + 1}. ${i.item}` }, { t: f0(i.net), b: 1 }, { t: f0(iq(B, i.item, 'net')) }, { t: f0(iq(C, i.item, 'net')) }, { ...dl('r', i.net, iq(B, i.item, 'net')), sep: 1 }, dl('r', i.net, iq(C, i.item, 'net')), { t: f0(i.qty) }, { t: pc(i.net / T0) }, { t: fR(i.net / A.o.adm) }] }));
       const mv = list.map((i) => ({ i, d: i.net - (iq(B, i.item, 'net') || 0) })).sort((p, q) => p.d - q.d); const N = [];
@@ -2769,8 +2824,30 @@ function fnbModel(c, W) {
       N.unshift(`${title.split(' (')[0]} chiếm ${pc(list.reduce((a, i) => a + i.net, 0) / T0)} doanh thu F&B kỳ này.`);
       return { key, title, head: ['Món', `Net kỳ này`, 'Net kỳ trước', 'Net kỳ trước nữa', '± kỳ trước', '± kỳ trước nữa', 'SL kỳ này', '% NCO', 'SPP'], rows, notes: N }; };
     const all = Object.values(A.items).sort((p, q) => q.net - p.net); T.push(mk(all.filter((i) => /^CO (Combo|Online)$/i.test(i.cls || '')).slice(0, 10), 'Top 10 combo (nghìn đ)', 'top10c')); T.push(mk(all.slice(0, 10), 'Top 10 món theo doanh thu (nghìn đ)', 'top10')); }
-  return { T, X, W, labs, needCS: !(A && A.cls) };
+  return { T, X, W, labs, ctrS, chS, needCS: !(A && A.cls) };
 }
+// bảng tổng hợp cuối báo cáo: chỉ số, kỳ này, kỳ trước, đánh giá, việc cần làm
+function fnbSum(c, MD, d) { const [A, B] = MD.X; if (!A) return []; const ML = ONLINE_MENU[c], cs = MD.ctrS || {}, ch = MD.chS || {}; const out = [];
+  const add = (item, a, b, k, act, opt = {}) => { const fm = (v) => (!fin(v) ? '–' : k === 'p' ? pc(v) : k === 'h' ? fR(v * 100) : fR(v)); const dv = [a, b].every(fin) ? a - b : null; const th = k === 'p' ? 0.005 : k === 'h' ? 0.003 : 0.2;
+    const ev = opt.ev || (!fin(dv) ? { t: '–' } : dv < -th ? { t: 'Giảm', tone: opt.neutral ? '' : 'bad' } : dv > th ? { t: 'Tăng', tone: opt.neutral ? '' : 'good' } : { t: 'Ổn định' });
+    out.push({ item, now: fm(a), prev: fm(b), d: !fin(dv) ? '–' : k === 'p' ? dpt(dv) : k === 'h' ? dp1(dv * 100) : dp1(dv), dTone: opt.neutral ? '' : tone('num', dv), ev, act: /^Giảm/.test(ev.t) || opt.force ? act : '' }); };
+  const B_ = (f) => (B ? f(B) : null);
+  const top = d && d.causes && d.causes.length ? d.causes[0].t.split(':')[0] : '';
+  add('SPP (nghìn đ/khách)', A.M.spp, B_((x) => x.M.spp), 'r', top ? `Phần thay đổi lớn nhất: ${top}.` : '', d && d.sppDown2 ? { ev: { t: 'Giảm 2 kỳ liên tiếp', tone: 'bad' } } : {});
+  add('Tỷ lệ khách mua F&B (SRT AD)', A.M.srt, B_((x) => x.M.srt), 'p', 'Giao chỉ tiêu SRT theo ca; mời combo ở quầy vé và cửa soát vé.');
+  add('Giá trị mỗi giao dịch (SPT, nghìn đ)', A.M.spt, B_((x) => x.M.spt), 'r', 'Mời nâng size và thêm món ở mọi order.');
+  const exAct = d && d.acts ? d.acts.find((t) => /^Kéo Extra/.test(t)) : null;
+  add('%Extra combo 1-2 tại quầy', A.M.ex, B_((x) => x.M.ex), 'p', exAct || 'Mời nâng size ở mọi order combo 1-2; đối chiếu %Extra theo từng nhân viên trong ca.', d && d.exDown2 ? { ev: { t: 'Giảm 2 kỳ liên tiếp', tone: 'bad' } } : {});
+  add('Combo / 100 khách quầy', A.M.off, B_((x) => x.M.off), 'h', 'Đối chiếu tỷ lệ mời combo theo nhân viên, theo ca; nghe lại kịch bản chào tại quầy.');
+  if (fin(cs.lA)) add('Bán lẻ / 100 khách quầy (phần)', cs.lA / 100, fin(cs.lB) ? cs.lB / 100 : null, 'h', 'Khi khách gọi bắp hoặc nước lẻ, chào combo kèm chênh lệch giá cụ thể.', { neutral: true, force: fin(cs.cA) && fin(cs.cB) && cs.cA < cs.cB - 0.3 && cs.lA > cs.lB + 0.3 });
+  if (cs.good !== null && cs.good !== undefined) out.push({ item: 'Bán tại quầy (kết luận)', now: '', prev: '', d: fin(cs.impT) ? dp1(cs.impT) : '–', dTone: tone('num', cs.impT), ev: cs.good === 'good' ? { t: 'Tốt', tone: 'good' } : cs.good === 'mix' ? { t: 'Số lượng giữ, Extra giảm', tone: 'bad' } : { t: 'Chưa tốt', tone: 'bad' }, act: cs.good === 'good' ? '' : cs.good === 'mix' ? 'Tập trung mời nâng size Extra; chấm %Extra theo nhân viên mỗi ngày.' : 'Kèm ca tại quầy giờ cao điểm, chấm %Extra và combo/100 khách theo nhân viên mỗi ngày.' });
+  const onUp = fin(ch.dk) && ch.dk > 0.005;
+  add('% khách mua vé online', A.onSh, B_((x) => x.onSh), 'p', `Mời combo tại cửa soát vé cho khách online chưa mua F&B${ML && ML.lv === 'STD' ? '; đề xuất HO đưa combo Extra vào gợi ý online' : ''}.`, { neutral: true, force: onUp });
+  if (fin(ch.mix)) out.push({ item: 'Phần SPP do dịch chuyển kênh', now: dp1(ch.mix), prev: '', d: '', dTone: tone('num', ch.mix), ev: ch.mix < -0.1 ? { t: 'Kéo giảm', tone: 'bad' } : ch.mix > 0.1 ? { t: 'Kéo tăng', tone: 'good' } : { t: 'Không đáng kể' }, act: '' });
+  add('DT F&B online / khách online (nghìn đ)', A.sppOn, B_((x) => x.sppOn), 'r', 'Kiểm tra combo hiển thị trên app/web và tình trạng hết món online.');
+  add('DT F&B tại quầy / khách quầy (nghìn đ)', A.sppOff, B_((x) => x.sppOff), 'r', 'Xem bảng bán tại quầy để biết giảm ở nhóm nào.');
+  return out; }
+const SUM_HEAD = ['Hạng mục', 'Kỳ này', 'Kỳ trước', '±', 'Đánh giá', 'Việc cần làm'];
 function fnbTables(c, P) {
   const W = areaWeeks(P).W; const MD = fnbModel(c, W);
   let h = missBanner(c, [['Kỳ này', W[0]], ['Kỳ trước', W[1]], ['Kỳ trước nữa', W[2]]]);
@@ -2778,7 +2855,9 @@ function fnbTables(c, P) {
     ${t.rows.map((r) => (r.sec ? `<tr class="grp"><td class="t" colspan="${t.head.length}">${esc(r.sec)}</td></tr>` : `<tr class="${r.cls || ''}">${r.cells.map((x, i) => `<td class="${i ? '' : 't'}${x.sep ? ' sep' : ''} ${x.tone || ''}">${x.b ? `<b>${esc(x.t)}</b>` : esc(x.t)}</td>`).join('')}</tr>`)).join('')}</tbody></table></div>`; });
   if (MD.needCS) h += `<div class="empty" style="margin-top:12px"><span>Các bảng CO Sale By Item Class, CO Combo Sale, dịch chuyển cơ cấu combo và top 10 cần đủ Concession Sales của cả kỳ này.</span></div>`;
   const N = MD.T.filter((t) => t.notes.length); if (N.length) h += `<div class="card" style="margin-top:12px"><div class="ct">Nhận định</div>${N.map((t) => `<div class="cdl">${esc(t.title)}</div><ul class="klist">${t.notes.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`).join('')}</div>`;
-  S._fnbM = { c, MD }; return h;
+  const z = S._area && S._area.D ? S._area.D.find((q) => q.z.c === c) : null; const SM = fnbSum(c, MD, z ? z.d : null);
+  if (SM.length) h += `<div class="card tw" style="margin-top:12px"><div class="ct">Tổng hợp</div><table class="cmp"><thead><tr>${SUM_HEAD.map((x, i) => `<th class="${i === 0 || i >= 4 ? 't' : ''}">${x}</th>`).join('')}</tr></thead><tbody>${SM.map((r) => `<tr><td class="t">${esc(r.item)}</td><td><b>${esc(r.now)}</b></td><td>${esc(r.prev)}</td><td class="${r.dTone || ''}">${esc(r.d)}</td><td class="t ${r.ev.tone || ''}">${esc(r.ev.t)}</td><td class="t">${esc(r.act)}</td></tr>`).join('')}</tbody></table></div>`;
+  S._fnbM = { c, MD, SM }; return h;
 }
 
 /* ---------- phân tích F&B khu vực (AM) ---------- */
@@ -2808,21 +2887,26 @@ function cinDiag(z) {
   const base = c2 && out.sppDown2 ? c2 : b; const bl = base === c2 ? '2 kỳ trước' : 'kỳ trước'; const dS = a.M.spp - base.M.spp; out.dS = dS; out.bl = bl;
   // 1. tách SPP: tỷ lệ khách mua × giá trị mỗi giao dịch
   const eSrt = fin(a.M.srt) && fin(base.M.srt) && fin(base.M.spt) ? (a.M.srt - base.M.srt) * base.M.spt : null, eSpt = fin(a.M.spt) && fin(base.M.spt) && fin(a.M.srt) ? (a.M.spt - base.M.spt) * a.M.srt : null;
-  if (fin(eSrt) && Math.abs(eSrt) >= 0.3) out.causes.push({ v: eSrt, t: `Tỷ lệ khách mua F&B (SRT AD) ${pc(base.M.srt)} → ${pc(a.M.srt)}: ${eSrt >= 0 ? '+' : '−'}${fR(Math.abs(eSrt))} nghìn đ/khách.` });
-  if (fin(eSpt) && Math.abs(eSpt) >= 0.3) out.causes.push({ v: eSpt, t: `Giá trị mỗi giao dịch F&B (SPT) ${fR(base.M.spt)} → ${fR(a.M.spt)} nghìn đ: ${eSpt >= 0 ? '+' : '−'}${fR(Math.abs(eSpt))} nghìn đ/khách.` });
+  if (fin(eSrt) && Math.abs(eSrt) >= 0.3) out.causes.push({ v: eSrt, t: `Tỷ lệ khách mua F&B (SRT AD) ${pc(base.M.srt)} → ${pc(a.M.srt)}: ${eSrt >= 0 ? '' : '−'}${fR(Math.abs(eSrt))} nghìn đ/khách.` });
+  if (fin(eSpt) && Math.abs(eSpt) >= 0.3) out.causes.push({ v: eSpt, t: `Giá trị mỗi giao dịch F&B (SPT) ${fR(base.M.spt)} → ${fR(a.M.spt)} nghìn đ: ${eSpt >= 0 ? '' : '−'}${fR(Math.abs(eSpt))} nghìn đ/khách.` });
   // 2. dịch chuyển kênh
-  if ([a.onSh, base.onSh].every(fin) && Math.abs(a.onSh - base.onSh) >= 0.02) { const dn = [a.onNetSh, base.onNetSh].every(fin) ? a.onNetSh - base.onNetSh : null;
-    out.causes.push({ v: a.onSh > base.onSh && (!fin(dn) || dn < (a.onSh - base.onSh) / 2) ? -0.6 : 0, t: `Khách mua vé online ${pc(base.onSh)} → ${pc(a.onSh)}${fin(dn) ? `, tỷ trọng doanh thu F&B online ${pc(base.onNetSh)} → ${pc(a.onNetSh)}` : ''}${a.onSh > base.onSh && fin(dn) && dn < (a.onSh - base.onSh) / 2 ? ': khách chuyển kênh nhưng chưa mua F&B online tương ứng' : ''}.` });
-    if (a.onSh > base.onSh && fin(a.M.on) && fin(base.M.on) && a.M.on <= base.M.on) out.acts.push('Khách online tăng nhưng tỷ lệ mua combo online không tăng theo: đặt người mời combo ở cửa soát vé trong giờ cao điểm, nhắc combo online khi khách check-in.'); }
+  if ([a.onSh, base.onSh].every(fin) && Math.abs(a.onSh - base.onSh) >= 0.02) { const mix = [base.sppOn, base.sppOff].every(fin) ? (a.onSh - base.onSh) * (base.sppOn - base.sppOff) : null; const ML = ONLINE_MENU[z.c];
+    out.causes.push({ v: fin(mix) ? mix : a.onSh > base.onSh ? -0.3 : 0, t: `Khách mua vé online ${pc(base.onSh)} → ${pc(a.onSh)}${fin(mix) ? `: phần SPP do dịch chuyển kênh ${dp1(mix)} nghìn đ/khách` : ''}${a.onSh > base.onSh ? `${fin(mix) ? ';' : ':'} khách qua quầy ít đi nên ít cơ hội mời combo và nâng size${ML && ML.lv === 'STD' ? ', menu online chỉ gợi ý combo thường' : ''}` : ''}.` });
+    if (a.onSh > base.onSh) out.acts.push(`Mời combo tại cửa soát vé cho khách online chưa mua F&B${ML && ML.lv === 'STD' ? '; đề xuất HO đưa combo Extra vào gợi ý online' : ''}.`); }
   // 3. Extra tại quầy
   if ([e[0], e[1]].every(fin)) { const dE = e[0] - (base === c2 ? e[2] : e[1]);
     if (Math.abs(dE) >= 0.01) out.causes.push({ v: dE * 10 * (a.M.srt || 0.3), t: `Tỷ lệ Extra combo 1-2 tại quầy ${pc(base === c2 ? e[2] : e[1])} → ${pc(e[0])} (${dpt(dE)}).` });
     if (out.exDown2 || (fin(out.exL) && e[0] < out.exL - 0.02)) { const need = fin(out.exL) ? Math.max(0, out.exL - e[0]) : null; const n12 = (coPick(z.c, a.o.co, 'CB1') || 0) + (coPick(z.c, a.o.co, 'CB2') || 0) + (coPick(z.c, a.o.co, 'CB1Ex') || 0) + (coPick(z.c, a.o.co, 'CB2Ex') || 0);
       out.acts.push(`Kéo Extra về mức ${pc(out.exL)} của tháng trước${fin(need) && n12 ? `: cần thêm khoảng ${f0(Math.ceil(need * n12 / z.X[0].days.length))} phần Extra mỗi ngày` : ''}. Mời nâng size ở mọi order combo 1-2, đối chiếu tỷ lệ Extra theo từng nhân viên trong ca.`);
-      out.checks.push('Combo Extra có thiếu ly/hộp size lớn hoặc đang được đẩy sang combo online không.'); } }
+      const ed = a.days.map((dd) => { const r = dayRec(z.c, dd); if (!r || !r.co) return null; const q = (k) => coPick(z.c, r.co, k) || 0; const n = q('CB1') + q('CB2') + q('CB1Ex') + q('CB2Ex'); return n >= 20 ? { dd, e: (q('CB1Ex') + q('CB2Ex')) / n } : null; }).filter(Boolean);
+      const lowD = fin(e[0]) ? ed.filter((x) => x.e < e[0] * 0.5) : [];
+      if (lowD.length) out.causes.push({ v: -0.3, t: `Extra rơi dưới một nửa mức bình quân vào ${lowD.map((x) => `${dShort(x.dd)} (${pc(x.e)})`).join(', ')}: kiểm tra tồn ly/hộp size lớn các ngày này.` });
+      else if (ed.length >= 3) out.causes.push({ v: 0, t: `Extra thấp đều qua các ngày (${pc(Math.min(...ed.map((x) => x.e)))} – ${pc(Math.max(...ed.map((x) => x.e)))}), không có ngày rơi đột ngột: vấn đề nằm ở việc mời nâng size, không phải thiếu ly/hộp.` }); } }
   // 4. combo ↔ bán lẻ
   if ([a.M.combo, base.M.combo, a.M.le, base.M.le].every(fin)) { const dc = a.M.combo - base.M.combo, dl = a.M.le - base.M.le;
-    if (dc < -0.005 && dl > 0.003) { out.causes.push({ v: -0.5, t: `Combo ${dpt(dc)} %Hit trong khi bán lẻ ${dpt(dl)}: khách chuyển từ combo sang mua lẻ.` }); out.acts.push('Khi khách gọi nước hoặc bắp lẻ, chào combo kèm chênh lệch giá cụ thể.'); out.checks.push('Combo nào đang hết hàng, ngưng bán hoặc giá vừa thay đổi.'); }
+    if (dc < -0.005 && dl > 0.003) { out.causes.push({ v: -0.5, t: `Combo ${dpt(dc)} %Hit trong khi bán lẻ ${dpt(dl)}: khách chuyển từ combo sang mua lẻ.` }); out.acts.push('Khi khách gọi nước hoặc bắp lẻ, chào combo kèm chênh lệch giá cụ thể.');
+      if (a.items && base.items) { const gone = Object.values(base.items).filter((i) => /^CO Combo$/i.test(i.cls || '') && i.qty >= 10 && !(a.items[i.item] && a.items[i.item].qty)).map((i) => i.item);
+        if (gone.length) out.causes.push({ v: -0.2, t: `Combo có bán ở kỳ trước nhưng kỳ này không phát sinh: ${gone.slice(0, 4).join(', ')}.` }); } }
     else if (dc < -0.01) out.causes.push({ v: dc * 30, t: `%Hit combo ${pc(base.M.combo)} → ${pc(a.M.combo)}.` }); }
   // 5. lượng khách và group size
   const dA = base.o.adm ? a.o.adm / base.o.adm - 1 : null;
@@ -2858,31 +2942,32 @@ function areaKey(A, D) {
   // nguyên nhân chung
   const srtDn = D.filter(({ d }) => d.causes.some((x) => /SRT AD/.test(x.t) && x.v < 0)).map(({ z }) => z.name), onUp = D.filter(({ z }) => { const [a, b] = z.X; return a && b && fin(a.onSh) && fin(b.onSh) && a.onSh - b.onSh >= 0.02; }).map(({ z }) => z.name);
   if (srtDn.length) K.push(`Nguyên nhân chính ở ${srtDn.join(', ')} là tỷ lệ khách mua F&B giảm, không phải giá trị mỗi lần mua.`);
-  if (onUp.length) K.push(`Khách mua vé online tăng ở ${onUp.join(', ')}: nhóm này không qua quầy vé nên ít được mời combo và nâng size, kéo Extra tại quầy và SRT xuống.`);
+  if (onUp.length) K.push(`Khách mua vé online tăng ở ${onUp.join(', ')}: khách qua quầy ít đi nên cơ hội mời combo và nâng size tại quầy giảm. Mức ảnh hưởng lên SPP của từng rạp xem ở bảng dịch chuyển kênh.`);
   const miss = D.filter(({ d }) => d.miss && d.miss.length).map(({ z, d }) => `${z.name} (${d.miss.join(', ')})`); if (miss.length) K.push(`Chưa đủ số để kết luận chắc: ${miss.join('; ')}.`);
   return K;
 }
 async function areaPDF() {
-  const st = S._area; if (!st) return; const { A, D } = st; toast('Đang tạo PDF…'); const K = areaKey(A, D);
-  const R = PDFReport(`Báo cáo F&B – ${A.labs[0]}/${A.W[0][0].slice(0, 4)}`, `So với 2 kỳ liền trước (${A.labs[1]}, ${A.labs[2]}) và ${A.lmLab.replace('TB', 'bình quân')}`);
-  R.h('Kết luận chính'); K.forEach((t) => R.bullet(t));
-  const tb = (title, key, f, fl, notes) => { R.h(title); R.table([{ t: 'Rạp', w: 110 }, { t: A.labs[0], w: 55 }, { t: A.labs[1], w: 55 }, { t: A.labs[2], w: 55 }, { t: '± kỳ trước', w: 50 }, { t: A.lmLab, w: 55 }, { t: '± TB tháng', w: 50 }, { t: 'Đánh giá', w: 80, al: 'left' }],
-    D.map(({ z, d }) => { const v = d[key] || [], l = d[key + 'L']; const dd = (x, y) => (!fin(x) || !fin(y) ? '–' : key === 'ex' ? dpt(x - y) : dp(x / y - 1));
-      const flag = d[fl] ? { t: 'Giảm 2 kỳ liên tiếp', bold: true, color: R.C.red } : fin(v[0]) && fin(v[1]) && v[0] < v[1] ? 'Giảm' : fin(v[0]) && fin(v[1]) && v[0] > v[1] ? { t: 'Tăng', color: R.C.green } : fin(v[0]) ? 'Ổn định' : 'Thiếu số';
-      return [z.name, { t: f(v[0]), bold: true }, f(v[1]), f(v[2]), dd(v[0], v[1]), f(l), dd(v[0], l), flag]; }).concat([[{ t: 'Khu vực', bold: true }, { t: f(A.area.W[0] && A.area.W[0][key]), bold: true }, f(A.area.W[1] && A.area.W[1][key]), f(A.area.W[2] && A.area.W[2][key]), '', f(A.area.L && A.area.L[key]), '', '']]));
-    notes.forEach((t) => R.bullet(t, { size: 9 })); };
-  tb('SPP theo kỳ (nghìn đ/khách)', 'spp', fR, 'sppDown2', K.filter((t) => /^SPP|giảm SPP/.test(t)));
-  tb('Tỷ lệ Extra combo 1-2 tại quầy', 'ex', (v) => pc(v), 'exDown2', K.filter((t) => /^Extra/.test(t)));
-  R.h('Từng rạp: nguyên nhân và việc cần làm');
-  D.filter(({ d }) => d.spp).sort((p, q) => (q.d.sppDown2 - p.d.sppDown2) || ((p.d.dS || 0) - (q.d.dS || 0))).forEach(({ z, d }) => {
-    R.h3(`${z.name} – SPP ${fR(d.spp[0])} nghìn đ (${d.dS >= 0 ? '+' : '−'}${fR(Math.abs(d.dS))} so với ${d.bl}), Extra ${pc(d.ex[0])}`, d.sppDown2 ? R.C.red : null);
-    d.causes.slice(0, 4).forEach((x) => R.bullet(x.t)); d.acts.forEach((t) => R.bullet(t, { mark: '→', markColor: R.C.green })); d.checks.forEach((t) => R.bullet('Kiểm tra: ' + t, { mark: '?', markColor: R.C.amber })); R.gap(4); });
-  // chi tiết rạp đang chọn: từng bảng kèm nhận định ngay dưới
-  const fm = S._fnbM; if (fm && fm.MD) { const nm = CI[fm.c] ? CI[fm.c].short || CI[fm.c].name : fm.c; R.h(`Chi tiết F&B ${nm}`);
-    fm.MD.T.forEach((t) => { R.h3(t.title); const n = t.head.length; const cols = t.head.map((x, i) => ({ t: i ? x : x || 'Chỉ tiêu', w: i ? (n > 6 ? 48 : 62) : n > 6 ? 130 : 160 }));
-      R.table(cols, t.rows.map((r) => (r.sec ? [{ t: r.sec, bold: true, fill: '#F5F6F8' }, ...Array(n - 1).fill({ t: '', fill: '#F5F6F8' })] : r.cells.map((x, i) => ({ t: x.t, bold: !!x.b || r.cls === 'tot', color: x.tone === 'bad' ? R.C.red : x.tone === 'good' ? R.C.green : null })))), { size: 8 });
-      t.notes.forEach((x) => R.bullet(x, { size: 9 })); R.gap(4); }); }
-  const bytes = R.save(); const blob = new Blob([bytes], { type: 'application/pdf' }); const name = `Bao_cao_FnB_${A.W[0][0]}_${A.W[0][A.W[0].length - 1]}.pdf`; window.__pdf = blob;
+  const fm = S._fnbM; if (!fm || !fm.MD) return; const { c, MD } = fm; const st = S._area; const z = st ? st.D.find((q) => q.z.c === c) : null; const nm = CI[c] ? CI[c].short || CI[c].name : c; toast('Đang tạo PDF…');
+  const yr = MD.W[0][0].slice(0, 4); const R = PDFReport(`Báo cáo F&B ${nm} – ${MD.labs[0]}/${yr}`, `So với 2 kỳ liền trước (${MD.labs[1]}, ${MD.labs[2]})${st ? ` và ${st.A.lmLab.replace('TB', 'bình quân')}` : ''}`);
+  const ms = MD.W.map((d, i) => { const m = dMiss(c, d); return m.any.length || m.cs.length ? `${['Kỳ này', 'Kỳ trước', 'Kỳ trước nữa'][i]}: ${m.any.length ? `chưa có số ${missTxt(m.any)}` : ''}${m.any.length && m.cs.length > m.any.length ? '; ' : ''}${m.cs.length > m.any.length ? `thiếu Concession Sales ${missTxt(m.cs.filter((x) => !m.any.includes(x)))}` : ''}` : ''; }).filter(Boolean);
+  if (ms.length) { R.p('Số liệu chưa đủ – ' + ms.join(' · '), { size: 9, color: R.C.amber }); R.gap(4); }
+  // 1. SPP và Extra của rạp
+  if (z && z.d.spp) { const d = z.d, A = st.A; R.h('SPP và Extra combo tại quầy');
+    const fl = (v, f2, th) => (f2 ? { t: 'Giảm 2 kỳ liên tiếp', bold: true, color: R.C.red } : fin(v[0]) && fin(v[1]) && v[0] < v[1] - th ? { t: 'Giảm', color: R.C.red } : fin(v[0]) && fin(v[1]) && v[0] > v[1] + th ? { t: 'Tăng', color: R.C.green } : fin(v[0]) ? 'Ổn định' : 'Thiếu số');
+    const row = (lab, v, l, f, isP, f2) => { const dd = (x, y) => (!fin(x) || !fin(y) ? '–' : isP ? dpt(x - y) : dp(x / y - 1)); return [lab, { t: f(v[0]), bold: true }, f(v[1]), f(v[2]), dd(v[0], v[1]), f(l), dd(v[0], l), fl(v, f2, isP ? 0.005 : 0.2)]; };
+    R.table([{ t: 'Chỉ tiêu', w: 110 }, { t: A.labs[0], w: 55 }, { t: A.labs[1], w: 55 }, { t: A.labs[2], w: 55 }, { t: '± kỳ trước', w: 50 }, { t: A.lmLab, w: 55 }, { t: '± TB tháng', w: 50 }, { t: 'Đánh giá', w: 80, al: 'left' }],
+      [row('SPP (nghìn đ/khách)', d.spp, d.sppL, fR, false, d.sppDown2), row('%Extra combo 1-2 tại quầy', d.ex, d.exL, (v) => pc(v), true, d.exDown2)]);
+    d.causes.slice(0, 5).forEach((x) => R.bullet(x.t, { size: 9 })); R.gap(4); }
+  // 2. các bảng F&B (trừ top item), mỗi bảng kèm nhận định
+  MD.T.filter((t) => !/^top/.test(t.key)).forEach((t) => { R.h3(t.title); const n = t.head.length; const cols = t.head.map((x, i) => ({ t: i ? x : x || 'Chỉ tiêu', w: i ? (n >= 9 ? 45 : n > 6 ? 57 : 62) : n > 6 ? 110 : 180 }));
+    R.table(cols, t.rows.map((r) => (r.sec ? [{ t: r.sec, bold: true, fill: '#F5F6F8' }, ...Array(n - 1).fill({ t: '', fill: '#F5F6F8' })] : r.cells.map((x, i) => ({ t: x.t, bold: !!x.b || r.cls === 'tot', color: x.tone === 'bad' ? R.C.red : x.tone === 'good' ? R.C.green : null })))), { size: 8 });
+    t.notes.forEach((x) => R.bullet(x, { size: 9 })); R.gap(4); });
+  // 3. tổng hợp
+  const SM = fm.SM || fnbSum(c, MD, z ? z.d : null);
+  if (SM.length) { R.h('Tổng hợp'); const col = (x) => (x === 'bad' ? R.C.red : x === 'good' ? R.C.green : null);
+    R.table([{ t: SUM_HEAD[0], w: 130 }, { t: SUM_HEAD[1], w: 50 }, { t: SUM_HEAD[2], w: 50 }, { t: SUM_HEAD[3], w: 45 }, { t: SUM_HEAD[4], w: 65, al: 'left' }, { t: SUM_HEAD[5], w: 170, al: 'left' }],
+      SM.map((r) => [r.item, { t: r.now, bold: true }, r.prev, { t: r.d, color: col(r.dTone) }, { t: r.ev.t, bold: !!r.ev.tone, color: col(r.ev.tone) }, r.act]), { size: 8 }); }
+  const bytes = R.save(); const blob = new Blob([bytes], { type: 'application/pdf' }); const name = `Bao_cao_FnB_${c}_${MD.W[0][0]}_${MD.W[0][MD.W[0].length - 1]}.pdf`; window.__pdf = blob;
   if (window.claude && window.claude.use) { const dl = await window.claude.use('downloads').catch(() => null); if (dl) { try { await dl.save({ filename: name, data: blob }); toast('Đã xuất ' + name); } catch (e) { toast('Chưa tải được file: ' + (e.message || e), 5000); } return; } }
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); toast('Đã xuất ' + name);
 }
