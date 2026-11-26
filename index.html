@@ -238,6 +238,8 @@ td.pre{white-space:pre-line}.mut{color:var(--mut,#6B7178)}.sm{font-size:11px}
 .clu{font-size:19px;font-weight:700;margin:30px 0 14px;padding-top:14px;border-top:2px solid var(--ink)}
 .head + .clu{margin-top:6px;border-top:0;padding-top:0}
 .ksub{margin:4px 0 2px 16px;padding:0;display:grid;gap:3px;list-style:'– ';color:var(--ink2);font-size:13px}
+tr.ron td{background:#F1F5FB}
+tr.roff td{background:#FBF7EF}
 </style>
 </head>
 <body>
@@ -2747,7 +2749,7 @@ function fnbX(c, days) {
     if (o.items) { cov = 0; Object.values(o.items).forEach((i) => { const [ch, g] = fgOf(i.cls, i.item); if (ch !== 'Online' || !isCbG(g)) return; const n = norm(i.item); const k = /(combo|cbo|cb) ?4\b/.test(n) ? 4 : /(combo|cbo|cb) ?3\b/.test(n) ? 3 : /(combo|cbo|cb) ?2\b|2x/.test(n) ? 2 : 1; cov += (i.qty || 0) * k; }); X.covBy = 'combo'; }
     else if (o.ttk) { cov = onGD * (o.adm / o.ttk); X.covBy = 'avg'; }
     if (fin(o.onAdm) && o.onAdm) { X.onSrt = onGD / o.onAdm; X.offAdm = o.adm - o.onAdm; if (fin(cov)) { X.onCov = Math.min(cov, o.onAdm); X.onNoFB = o.onAdm - X.onCov; X.onNoFBsh = X.onNoFB / o.onAdm; X.oppAdm = X.offAdm + X.onNoFB; } }
-    if (fin(tco) && tco > onGD) { X.offGD = tco - onGD; X.offSrt = X.oppAdm > 0 ? X.offGD / X.oppAdm : null; X.offSpt = fin(X.offNet) ? X.offNet / X.offGD : null; }
+    if (fin(tco) && tco > onGD) { X.offGD = tco - onGD; X.offSrt = X.oppAdm > 0 ? X.offGD / X.oppAdm : null; X.offSrtP = X.offAdm > 0 ? X.offGD / X.offAdm : null; X.offSpt = fin(X.offNet) ? X.offNet / X.offGD : null; }
     X.onSpt = fin(X.onNet) && onGD ? X.onNet / onGD : null; }
   X.tco = o.tco; X.upt = o.tco ? (X.onQ + X.offQ) / o.tco : null; X.avgP = X.byItems && X.onQ + X.offQ ? X.net / (X.onQ + X.offQ) : null;
   return X; }
@@ -2778,17 +2780,17 @@ function fnbModel(c, W) {
   const fmt = (k, v) => (!fin(v) ? '–' : k === 'p' ? pc(v) : k === 'n' ? f0(v) : k === 'h' ? fR(v * 100) : fR(v));
   const dl = (k, a, b) => { if (!fin(a) || !fin(b)) return { t: '–' }; const v = k === 'p' || k === 'h' ? a - b : b ? a / b - 1 : null; if (!fin(v)) return { t: '–' }; return { t: k === 'h' ? (v >= 0 ? '' : '-') + fR(Math.abs(v) * 100) : k === 'p' ? dpt(v) : dp(v), tone: tone('num', v) }; };
   const R = (label, k, f, o = {}) => { const v = X.map((x) => (x ? f(x) : null)); return { cells: [{ t: label }, { t: fmt(k, v[0]), b: 1 }, { t: fmt(k, v[1]) }, { t: fmt(k, v[2]) }, { ...dl(k, v[0], v[1]), sep: 1 }, dl(k, v[0], v[2])], cls: o.cls, v }; };
-  const secR = (t) => ({ sec: t }); const both = A && B; const items2 = both && A.byItems && B.byItems;
+  const secR = (t) => ({ sec: t }); const ron = (r) => ({ ...r, cls: (r.cls || '') + ' ron' }), roff = (r) => ({ ...r, cls: (r.cls || '') + ' roff' }); const both = A && B; const items2 = both && A.byItems && B.byItems;
   const head = ['', `Kỳ này ${labs[0]}`, `Kỳ trước ${labs[1]}`, `Kỳ trước nữa ${labs[2]}`, '± kỳ trước', '± kỳ trước nữa'];
   const F = (x, ch, g) => (x && x.F[ch + '|' + g]) || null;
 
   // 1. Chỉ số F&B chính
   { const rows = [secR('Tổng'), R('Admits', 'n', (x) => x.o.adm), R('% khách mua vé online', 'p', (x) => x.onSh), R('SPP (nghìn đ/khách)', 'r', (x) => x.M.spp), R('SRT (AD)', 'p', (x) => x.M.srt), R('SRT (Trans)', 'p', (x) => x.o.srt_tr),
       R('SPT (nghìn đ/giao dịch)', 'r', (x) => x.M.spt), R('Số phần F&B / giao dịch', 'r', (x) => x.upt), R('Giá bình quân / phần (nghìn đ)', 'r', (x) => x.avgP), R('%Hit combo', 'p', (x) => x.M.combo), R('%Hit sản phẩm bán lẻ', 'p', (x) => x.M.le),
-      secR('Giao dịch F&B theo kênh (mỗi combo online = 1 giao dịch)'), R('GD F&B online', 'n', (x) => x.onGD), R('SRT AD online (GD online / khách mua vé online)', 'p', (x) => x.onSrt), R('Khách đã mua F&B online (quy đổi theo cỡ combo)', 'n', (x) => x.onCov), R('Khách mua vé online chưa mua F&B online', 'n', (x) => x.onNoFB), R('% khách vé online chưa mua F&B online', 'p', (x) => x.onNoFBsh), R('SPT online (nghìn đ/GD)', 'r', (x) => x.onSpt),
-      R('GD F&B tại quầy', 'n', (x) => x.offGD), R('Khách mua vé tại quầy', 'n', (x) => x.offAdm), R('Khách có thể mua tại quầy (vé quầy + vé online chưa mua F&B online)', 'n', (x) => x.oppAdm), R('SRT AD tại quầy (GD quầy / khách có thể mua tại quầy)', 'p', (x) => x.offSrt), R('SPT tại quầy (nghìn đ/GD)', 'r', (x) => x.offSpt),
-      secR('F&B mua online (tính trên tổng khách)'), R('SPP phần online (nghìn đ/khách)', 'r', (x) => x.onSpp), R('Phần F&B / 100 khách', 'h', (x) => x.onU), R('Combo / 100 khách', 'h', (x) => x.onCb), R('Giá bình quân / phần (nghìn đ)', 'r', (x) => x.onPu),
-      secR('F&B mua tại quầy (tính trên tổng khách)'), R('SPP phần tại quầy (nghìn đ/khách)', 'r', (x) => x.offSpp), R('Phần F&B / 100 khách', 'h', (x) => x.offU), R('Combo / 100 khách', 'h', (x) => x.offCb), R('Giá bình quân / phần (nghìn đ)', 'r', (x) => x.offPu)];
+      secR('Giao dịch F&B theo kênh'), ...[R('GD F&B online', 'n', (x) => x.onGD), R('SRT AD online (GD online / khách mua vé online)', 'p', (x) => x.onSrt), R('Khách đã mua F&B online (quy đổi theo cỡ combo)', 'n', (x) => x.onCov), R('Khách mua vé online chưa mua F&B online', 'n', (x) => x.onNoFB), R('% khách vé online chưa mua F&B online', 'p', (x) => x.onNoFBsh), R('SPT online (nghìn đ/GD)', 'r', (x) => x.onSpt)].map(ron),
+      ...[R('GD F&B tại quầy', 'n', (x) => x.offGD), R('Khách mua vé tại quầy', 'n', (x) => x.offAdm), R('Khách có thể mua tại quầy (vé quầy + vé online chưa mua F&B online)', 'n', (x) => x.oppAdm), R('SRT AD tại quầy thuần (GD quầy / khách mua vé tại quầy)', 'p', (x) => x.offSrtP), R('SRT AD tại quầy (GD quầy / khách có thể mua tại quầy)', 'p', (x) => x.offSrt), R('SPT tại quầy (nghìn đ/GD)', 'r', (x) => x.offSpt)].map(roff),
+      secR('F&B mua online (tính trên tổng khách)'), ...[R('SPP phần online (nghìn đ/khách)', 'r', (x) => x.onSpp), R('Phần F&B / 100 khách', 'h', (x) => x.onU), R('Combo / 100 khách', 'h', (x) => x.onCb), R('Giá bình quân / phần (nghìn đ)', 'r', (x) => x.onPu)].map(ron),
+      secR('F&B mua tại quầy (tính trên tổng khách)'), ...[R('SPP phần tại quầy (nghìn đ/khách)', 'r', (x) => x.offSpp), R('Phần F&B / 100 khách', 'h', (x) => x.offU), R('Combo / 100 khách', 'h', (x) => x.offCb), R('Giá bình quân / phần (nghìn đ)', 'r', (x) => x.offPu)].map(roff)];
     const N = [];
     if (both && [A.M.spp, B.M.spp].every(fin)) { const eSrt = (A.M.srt - B.M.srt) * B.M.spt, eSpt = (A.M.spt - B.M.spt) * A.M.srt; K.kpi = { dS: A.M.spp - B.M.spp, eSrt, eSpt };
       N.push(nItem(`SPP ${cmpV(A.M.spp, B.M.spp, 'nghìn đ/khách')} so với kỳ trước${C && fin(C.M.spp) ? `; so với kỳ trước nữa ${updn(A.M.spp - C.M.spp, 0.0499)} ${pc(Math.abs(A.M.spp / C.M.spp - 1))} (${dp1(A.M.spp - C.M.spp)} nghìn đ/khách)` : ''}.`, [
@@ -2803,10 +2805,16 @@ function fnbModel(c, W) {
           dOn * dOff < 0 ? `${dOn > 0 ? 'Online tăng, tại quầy giảm' : 'Tại quầy tăng, online giảm'}: có dịch chuyển giữa 2 kênh (chi tiết ở bảng dịch chuyển combo).` : `Hai kênh cùng ${dOn + dOff >= 0 ? 'tăng' : 'giảm'}.`])); }
       else if ([A.onCb, B.onCb, A.offCb, B.offCb].every(fin)) N.push(nItem('Theo kênh mua F&B (số combo, chưa đủ Concession Sales để tính doanh thu):', [`Online: ${cmpH(A.onCb, B.onCb, 'combo/100 khách')}.`, `Tại quầy: ${cmpH(A.offCb, B.offCb, 'combo/100 khách')}.`]));
       // SRT AD theo kênh giao dịch
-      if ([A.offSrt, B.offSrt].every(fin)) N.push(nItem(`SRT AD theo kênh (mỗi combo online = 1 GD online; khách đã mua F&B online quy đổi ${A.covBy === 'combo' ? 'theo cỡ combo online: combo 1 = 1, combo 2 = 2, combo 3 = 3, combo 4 = 4 khách' : 'theo số khách bình quân mỗi giao dịch vé, vì chưa đủ Concession Sales'}):`, [
+      if ([A.offSrt, B.offSrt].every(fin)) { const dOn = [A.onSh, B.onSh].every(fin) ? A.onSh - B.onSh : null;
+        N.push(nItem('SRT AD theo kênh:', [
         [A.onSrt, B.onSrt].every(fin) ? `Online: ${cmpP(A.onSrt, B.onSrt)} trên khách mua vé online; khách mua vé online chưa mua F&B online ${fin(B.onNoFBsh) ? `${pc(B.onNoFBsh)} → ${pc(A.onNoFBsh)}` : ''} (${f0(A.onNoFB)} khách kỳ này).` : '',
         `Tại quầy: ${cmpP(A.offSrt, B.offSrt)} trên khách có thể mua tại quầy (${f0(B.oppAdm)} → ${f0(A.oppAdm)} khách, gồm ${f0(A.offAdm)} khách vé quầy và ${f0(A.onNoFB)} khách vé online chưa mua F&B online)${[A.offSpt, B.offSpt].every(fin) ? `; SPT tại quầy ${cmpV(A.offSpt, B.offSpt, 'nghìn đ')}` : ''}.`,
-        A.offSrt < B.offSrt - 0.005 ? 'Quầy chốt được ít khách hơn trên số khách thực sự có thể mua tại quầy: phần này do quầy, không phải do khách chuyển online.' : A.offSrt > B.offSrt + 0.005 ? 'Quầy chốt được nhiều khách hơn trên số khách thực sự có thể mua tại quầy.' : 'Tỷ lệ chốt tại quầy giữ nguyên.']));
+        A.offSrt < B.offSrt - 0.005 ? (fin(dOn) && dOn > 0.005 ? `Khách mua vé online ${cmpP(A.onSh, B.onSh)}: một phần khách vé online đi thẳng vào phòng chiếu, không ghé quầy, nên SRT AD tại quầy giảm chưa chắc do quầy bán kém. Số liệu hiện chưa tách được phần này.` : 'Khách mua vé online không tăng, nên SRT AD tại quầy giảm chủ yếu do quầy chốt được ít khách hơn.') : A.offSrt > B.offSrt + 0.005 ? 'SRT AD tại quầy tăng.' : 'SRT AD tại quầy giữ nguyên.'])); }
+      if ([A.offSrtP, B.offSrtP].every(fin)) { const v = [A.offSrtP, B.offSrtP, C ? C.offSrtP : null], d1 = v[0] - v[1], d2 = fin(v[2]) ? v[1] - v[2] : null;
+        const trend = d2 !== null && d1 < -0.005 && d2 < -0.005 ? 'giảm 2 kỳ liên tiếp' : d2 !== null && d1 > 0.005 && d2 > 0.005 ? 'tăng 2 kỳ liên tiếp' : Math.abs(d1) <= 0.005 ? 'gần như không đổi so với kỳ trước' : d1 > 0 ? 'tăng so với kỳ trước' : 'giảm so với kỳ trước';
+        N.push(nItem(`SRT AD tại quầy thuần (chỉ khách mua vé tại quầy và GD tại quầy): ${fin(v[2]) ? pc(v[2]) + ' → ' : ''}${pc(v[1])} → ${pc(v[0])}, ${trend}.`, [
+          `So với kỳ trước ${updn(d1, 0.0005)} ${fR(Math.abs(d1) * 100)}%: GD F&B tại quầy ${f0(B.offGD)} → ${f0(A.offGD)}${B.offGD ? ` (${dp(A.offGD / B.offGD - 1)})` : ''}; khách mua vé tại quầy ${f0(B.offAdm)} → ${f0(A.offAdm)}${B.offAdm ? ` (${dp(A.offAdm / B.offAdm - 1)})` : ''}.`,
+          `Kết luận: ${Math.abs(d1) <= 0.005 ? 'tỷ lệ chốt tại quầy giữa các tuần không thay đổi thực tế' : d1 > 0 ? 'tỷ lệ chốt tại quầy tăng thực tế' : 'tỷ lệ chốt tại quầy giảm thực tế'}${trend.includes('2 kỳ') ? `, xu hướng ${trend}` : ''}. Chỉ số này có thể cao hơn thực tế vì GD tại quầy gồm cả khách vé online ghé quầy; dùng để so xu hướng giữa các tuần.`])); }
       // SRT theo kênh
       if (Math.abs(A.M.srt - B.M.srt) >= 0.003 && [A.onU, B.onU, A.offU, B.offU].every(fin)) { const dsr = A.M.srt - B.M.srt, rOn = A.onU / B.onU - 1, rOff = A.offU / B.offU - 1;
         const same = Math.sign(rOn) === Math.sign(dsr) || Math.sign(rOff) === Math.sign(dsr);
@@ -2911,9 +2919,9 @@ function fnbModel(c, W) {
             ...top.map((x) => `${x.g}: tỷ trọng số phần ${pc(x.sB)} → ${pc(x.sA)}, giá ${fR(x.pB)} nghìn đ ${x.pB < pm.avgB ? 'thấp hơn' : 'cao hơn'} bình quân ${fR(pm.avgB)}: ${dp1(x.mix)} nghìn đ/phần.`),
             Math.abs(pm.pe) >= 0.3 ? `Cùng một món nhưng giá bán bình quân thay đổi (khuyến mãi, giảm giá thành viên, đổi giá): ${dp1(pm.pe)} nghìn đ/phần.` : ''])); K.ctr = { mixP: pm.avgA - pm.avgB }; } }
         const moved = dC < 0 && dOnC > 0 ? Math.min(-dC, dOnC) : 0, real = dC + moved; K.shift = { moved, dOnC }; const exA = A.exOff, exB = B.exOff;
-        const srtOk = [A.offSrt, B.offSrt].every(fin) ? A.offSrt - B.offSrt >= -0.005 : null; const volOk = srtOk !== null ? srtOk : real >= -0.3, exOk = !fin(exA) || !fin(exB) || exA - exB >= -0.01; const good = volOk && exOk ? 'good' : volOk ? 'mix' : 'bad';
+        const srtOk = [A.offSrt, B.offSrt].every(fin) ? A.offSrt - B.offSrt >= -0.005 : null; const volOk = srtOk !== null ? srtOk : real >= -0.3, exOk = !fin(exA) || !fin(exB) || exA - exB >= -0.01; const onUp = [A.onSh, B.onSh].every(fin) && A.onSh - B.onSh > 0.005; const good = volOk && exOk ? 'good' : volOk ? 'mix' : onUp ? 'open' : 'bad';
         cs = { good, cA, cB, lA, lB, exA, exB, impT, real };
-        N.push(nItem(`Kết luận bán tại quầy: ${good === 'good' ? 'giữ được hoặc tốt hơn kỳ trước' : good === 'mix' ? 'tỷ lệ chốt giữ được nhưng khách mua combo nhỏ hơn (Extra giảm)' : 'yếu hơn kỳ trước'}.`, [
+        N.push(nItem(`Kết luận bán tại quầy: ${good === 'good' ? 'giữ được hoặc tốt hơn kỳ trước' : good === 'mix' ? 'tỷ lệ chốt giữ được nhưng khách mua combo nhỏ hơn (Extra giảm)' : good === 'open' ? 'SRT AD tại quầy giảm nhưng khách vé online tăng, một phần khách không ghé quầy; cần theo dõi thêm trước khi kết luận quầy bán kém' : 'yếu hơn kỳ trước'}.`, [
           srtOk !== null ? `SRT AD tại quầy (GD quầy / khách có thể mua tại quầy) ${cmpP(A.offSrt, B.offSrt)}.` : '',
           `Số combo tại quầy ${dp1(dC)} phần/100 khách${dOnC > 0.05 ? `, combo online ${dp1(dOnC)}` : ''}.${moved >= 0.05 ? ` Phần giảm tại quầy (${fR(moved)}) là khách đã mua online; sau khi trừ phần này, tại quầy ${Math.abs(real) < 0.05 ? 'giữ nguyên' : `${real > 0 ? 'tăng' : 'giảm'} ${fR(Math.abs(real))} phần/100 khách`}.` : ''}`,
           [exA, exB].every(fin) ? `%Extra combo 1-2 tại quầy ${cmpP(exA, exB)}.` : '', fin(impT) ? `SPP phần tại quầy thay đổi theo số phần: ${dp1(impT)} nghìn đ/khách.` : ''])); } }
@@ -2930,7 +2938,7 @@ function fnbModel(c, W) {
     const N = [];
     if (both && [A.onSh, B.onSh].every(fin)) { const dk = A.onSh - B.onSh; chS = { dk };
       N.push(nItem(`Khách mua vé online ${cmpP(A.onSh, B.onSh)}.`, [[A.onQSh, B.onQSh].every(fin) ? `Số phần F&B mua online ${cmpP(A.onQSh, B.onQSh)}.` : '', [A.onNetSh, B.onNetSh].every(fin) ? `Doanh thu F&B mua online ${cmpP(A.onNetSh, B.onNetSh)}.` : '',
-        'Quầy vé và quầy bắp nước là một, nên khách mua vé online vẫn có thể mua F&B tại quầy; số dưới đây chia theo nơi khách mua F&B.']));
+        ]));
       if (items2) { const dOn = A.onSpp - B.onSpp, dOff = A.offSpp - B.offSpp; chS.dOn = dOn; chS.dOff = dOff;
         N.push(nItem(`SPP ${updn(dOn + dOff, 0.0499)} ${fR(Math.abs(dOn + dOff))} nghìn đ/khách so với kỳ trước, gồm:`, [`Phần mua online: ${cmpV(A.onSpp, B.onSpp, 'nghìn đ/khách')}.`, `Phần mua tại quầy: ${cmpV(A.offSpp, B.offSpp, 'nghìn đ/khách')}.`,
           dOn > 0 && dOff < 0 ? `Online tăng bù ${pc(Math.min(1, dOn / -dOff), 0)} phần giảm tại quầy.` : ''])); }
@@ -2964,10 +2972,11 @@ function fnbSum(c, MD, d) { const [A, B] = MD.X; if (!A) return []; const ML = O
   const exAct = d && d.acts ? d.acts.find((t) => /^Kéo Extra/.test(t)) : null;
   add('%Extra combo 1-2 tại quầy', A.exOff, B_((x) => x.exOff), 'p', exAct || 'Mời nâng size ở mọi order combo 1-2; đối chiếu %Extra theo từng nhân viên trong ca.', d && d.exDown2 ? { ev: { t: 'Giảm 2 kỳ liên tiếp', tone: 'bad' } } : {});
   add('SRT AD online (GD / khách vé online)', A.onSrt, B_((x) => x.onSrt), 'p', `Mời combo khi khách online đến soát vé; nhắc combo trên app khi khách đặt vé.`);
+  add('SRT AD tại quầy thuần (GD quầy / khách vé quầy)', A.offSrtP, B_((x) => x.offSrtP), 'p', 'Đối chiếu tỷ lệ chốt theo nhân viên, theo ca; nghe lại kịch bản mời tại quầy.');
   add('SRT AD tại quầy (trên khách có thể mua tại quầy)', A.offSrt, B_((x) => x.offSrt), 'p', 'Đối chiếu tỷ lệ chốt theo nhân viên, theo ca; nghe lại kịch bản mời tại quầy.');
   add('Combo tại quầy / 100 khách', A.offCb, B_((x) => x.offCb), 'h', 'Đối chiếu tỷ lệ mời combo theo nhân viên, theo ca.', fin(cs.real) && cs.real >= -0.3 && A.offCb < (B ? B.offCb : 0) ? { ev: { t: 'Khách chuyển sang mua online' }, neutral: true } : {});
   if (fin(cs.lA)) add('Bán lẻ tại quầy / 100 khách', cs.lA / 100, fin(cs.lB) ? cs.lB / 100 : null, 'h', 'Khi khách gọi bắp hoặc nước lẻ, chào combo kèm chênh lệch giá cụ thể.', { neutral: true, force: fin(cs.cA) && fin(cs.cB) && cs.cA < cs.cB - 0.3 && cs.lA > cs.lB + 0.3 });
-  if (cs.good) out.push({ item: 'Bán tại quầy (kết luận)', now: '', prev: '', d: '', dTone: '', ev: cs.good === 'good' ? { t: 'Tốt', tone: 'good' } : cs.good === 'mix' ? { t: 'Số lượng giữ, Extra giảm', tone: 'bad' } : { t: 'Chưa tốt', tone: 'bad' }, act: cs.good === 'bad' ? 'Kèm ca tại quầy giờ cao điểm, chấm %Extra và combo/100 khách theo nhân viên mỗi ngày.' : '' });
+  if (cs.good) out.push({ item: 'Bán tại quầy (kết luận)', now: '', prev: '', d: '', dTone: '', ev: cs.good === 'good' ? { t: 'Tốt', tone: 'good' } : cs.good === 'mix' ? { t: 'Số lượng giữ, Extra giảm', tone: 'bad' } : cs.good === 'open' ? { t: 'Cần theo dõi' } : { t: 'Chưa tốt', tone: 'bad' }, act: cs.good === 'bad' ? 'Kèm ca tại quầy giờ cao điểm, chấm %Extra và combo/100 khách theo nhân viên mỗi ngày.' : '' });
   add('% khách mua vé online', A.onSh, B_((x) => x.onSh), 'p', `Mời combo khi khách online đến soát vé${ML && ML.lv === 'STD' ? '; đề xuất HO đưa combo Extra vào bảng gợi ý online' : ''}.`, { neutral: true, force: fin(ch.dk) && ch.dk > 0.005 });
   add('SPP phần F&B mua online (nghìn đ/khách)', A.onSpp, B_((x) => x.onSpp), 'r', 'Kiểm tra combo hiển thị trên app/web và tình trạng hết món online.');
   add('SPP phần F&B mua tại quầy (nghìn đ/khách)', A.offSpp, B_((x) => x.offSpp), 'r', 'Xem bảng bán tại quầy để biết giảm ở nhóm nào.', fin(cs.real) && cs.real >= -0.3 && MD.K.shift && MD.K.shift.moved >= 0.05 && B && A.offSpp < B.offSpp ? { ev: { t: 'Khách chuyển sang mua online' }, neutral: true } : {});
@@ -2977,9 +2986,8 @@ function fnbWrap(MD, SM) { const [A, B] = MD.X; const out = []; if (!A || !B) re
   if (kp) out.push(`SPP ${cmpV(A.M.spp, B.M.spp, 'nghìn đ/khách')} so với kỳ trước; phần tác động lớn hơn là ${Math.abs(kp.eSrt) >= Math.abs(kp.eSpt) ? `SRT AD (${dp1(kp.eSrt)} nghìn đ/khách)` : `SPT (${dp1(kp.eSpt)} nghìn đ/khách)`}.`);
   if ([A.M.spt, B.M.spt].every(fin)) out.push(`SPT ${cmpV(A.M.spt, B.M.spt, 'nghìn đ/giao dịch')}${[A.upt, B.upt].every(fin) ? `; số phần mỗi giao dịch ${fR(B.upt)} → ${fR(A.upt)}` : ''}${[A.avgP, B.avgP].every(fin) ? `; giá bình quân mỗi phần ${fR(B.avgP)} → ${fR(A.avgP)} nghìn đ` : ''}.`);
   if (K.mx) out.push(`Cơ cấu Extra/thường: giá bình quân combo 1-2 ${fR(K.mx.avgB)} → ${fR(K.mx.avgA)} nghìn đ, tác động ${dp1(K.mx.spp)} nghìn đ/khách${K.shift && K.shift.moved >= 0.05 ? `; ${fR(K.shift.moved)} combo/100 khách chuyển từ quầy sang mua online` : ''}.`);
-  if (cs.good) out.push(`Bán tại quầy: ${cs.good === 'good' ? 'giữ được hoặc tốt hơn kỳ trước' : cs.good === 'mix' ? 'số lượng giữ được nhưng khách mua combo nhỏ hơn' : 'yếu hơn kỳ trước'}${[cs.exA, cs.exB].every(fin) ? `; %Extra combo 1-2 ${pc(cs.exB)} → ${pc(cs.exA)}` : ''}.`);
+  if (cs.good) out.push(`Bán tại quầy: ${cs.good === 'good' ? 'giữ được hoặc tốt hơn kỳ trước' : cs.good === 'mix' ? 'số lượng giữ được nhưng khách mua combo nhỏ hơn' : cs.good === 'open' ? 'SRT AD tại quầy giảm nhưng khách vé online tăng, cần theo dõi thêm' : 'yếu hơn kỳ trước'}${[cs.exA, cs.exB].every(fin) ? `; %Extra combo 1-2 ${pc(cs.exB)} → ${pc(cs.exA)}` : ''}.`);
   if (fin(ch.dk)) out.push(`Kênh online: khách mua vé online ${cmpP(A.onSh, B.onSh)}${fin(ch.dOn) ? `; F&B mua online ${dp1(ch.dOn)}, tại quầy ${dp1(ch.dOff)} nghìn đ/khách` : ''}.`);
-  const acts = SM.filter((r) => r.act).map((r) => r.act); if (acts.length) out.push(`Ưu tiên: ${[...new Set(acts)].slice(0, 3).join(' ')}`);
   return out; }
 const SUM_HEAD = ['Hạng mục', 'Kỳ này', 'Kỳ trước', '±', 'Đánh giá', 'Việc cần làm'];
 const noteHtml = (N) => `<ul class="klist">${N.map((x) => (typeof x === 'string' ? `<li>${esc(x)}</li>` : `<li>${esc(x.t)}${x.sub && x.sub.length ? `<ul class="ksub">${x.sub.map((y) => `<li>${esc(y)}</li>`).join('')}</ul>` : ''}</li>`)).join('')}</ul>`;
@@ -3007,7 +3015,8 @@ function areaModel(P) {
     return { c, name: ci.short || ci.name, X, L, ms, dayN: W.map((d) => d.filter((x) => { const r = dayRec(c, x); return r && r.adm; }).length) }; });
   // tổng khu vực (gộp số tuyệt đối)
   const areaAgg = (idx, lm) => { let adm = 0, net = 0, n12 = 0, e12 = 0, tco = 0; cins.forEach((z) => { const x = lm ? z.L : z.X[idx]; if (!x) return; adm += x.o.adm; net += (x.M.spp || 0) * x.o.adm; tco += x.o.tco || 0;
-      const q = (k) => coPick(z.c, x.o.co, k) || 0; n12 += q('CB1') + q('CB2') + q('CB1Ex') + q('CB2Ex'); e12 += q('CB1Ex') + q('CB2Ex'); }); return adm ? { spp: net / adm, ex: n12 ? e12 / n12 : null, srt: tco / adm, adm } : null; };
+      const q = (k) => coPick(z.c, x.o.co, k) || 0; n12 += q('CB1') + q('CB2') + q('CB1Ex') + q('CB2Ex'); e12 += q('CB1Ex') + q('CB2Ex'); }); let u = 0, ut = 0, uok = true; cins.forEach((z) => { const x = lm ? z.L : z.X[idx]; if (!x) return; if (!x.byItems) { uok = false; return; } const g = (k) => (x.F['Quầy|' + k] || { q: 0 }).q; u += g('Combo U22'); ut += g('Combo Extra 1-2') + g('Combo thường 1-2') + g('Combo U22'); });
+    return adm ? { spp: net / adm, ex: n12 ? e12 / n12 : null, srt: tco / adm, adm, u22: uok && ut ? u / ut : null } : null; };
   const area = { W: [0, 1, 2].map((i) => areaAgg(i)), L: areaAgg(0, true) };
   return { W, labs, lmLab, cins, area };
 }
@@ -3015,7 +3024,7 @@ function areaModel(P) {
 function cinDiag(z) {
   const [a, b, c2] = z.X, L = z.L; const out = { flags: [], causes: [], acts: [], checks: [] }; if (!a || !b) return out;
   const s = [a, b, c2].map((x) => (x ? x.M.spp : null)), e = [a, b, c2].map((x) => (x ? x.M.ex : null));
-  out.spp = s; out.ex = e; out.sppL = L ? L.M.spp : null; out.exL = L ? L.M.ex : null;
+  out.spp = s; out.ex = e; const u2 = (x) => { if (!x || !x.byItems) return null; const g = (k) => (x.F['Quầy|' + k] || { q: 0 }).q; const t = g('Combo Extra 1-2') + g('Combo thường 1-2') + g('Combo U22'); return t ? g('Combo U22') / t : null; }; out.u22 = [a, b, c2].map(u2); out.u22L = u2(L); out.sppL = L ? L.M.spp : null; out.exL = L ? L.M.ex : null;
   const full = z.ms.every((m) => !m.any.length); out.full = full;
   out.sppDown2 = full && [s[0], s[1], s[2]].every(fin) && s[0] < s[1] - 0.05 && s[1] < s[2] - 0.05; out.sppUp2 = [s[0], s[1], s[2]].every(fin) && s[0] > s[1] + 0.05 && s[1] > s[2] + 0.05;
   out.exDown2 = full && [e[0], e[1], e[2]].every(fin) && e[0] < e[1] - 0.003 && e[1] < e[2] - 0.003;
@@ -3056,16 +3065,15 @@ function cinDiag(z) {
 function areaSection(P) {
   const A = areaModel(P), D = A.cins.map((z) => ({ z, d: cinDiag(z) })); S._area = { A, D };
   const fs = (v) => fR(v), fx = (v) => pc(v);
-  const tbl = (title, key, f, flagKey) => `<div class="card tw" style="margin-top:12px"><div class="ct">${title}</div><table class="cmp"><thead><tr><th class="t">Rạp</th><th>${A.labs[0]}</th><th>${A.labs[1]}</th><th>${A.labs[2]}</th><th class="sep">± kỳ trước</th><th>${A.lmLab}</th><th>± TB tháng</th><th class="t">Đánh giá</th></tr></thead><tbody>
-    ${D.map(({ z, d }) => { const v = d[key] || [], l = d[key + 'L']; const isP = key === 'ex'; const dd = (x, y) => (!fin(x) || !fin(y) ? '–' : isP ? dpt(x - y) : dp(x / y - 1)); const tt = (x, y) => (fin(x) && fin(y) ? tone('num', x - y) : '');
-      const fl = d[flagKey] ? `<b class="bad">Giảm 2 kỳ liên tiếp</b>` : fin(v[0]) && fin(v[1]) && v[0] < v[1] - (isP ? 0.005 : 0.2) ? 'Giảm' : fin(v[0]) && fin(v[1]) && v[0] > v[1] + (isP ? 0.005 : 0.2) ? '<span class="good">Tăng</span>' : fin(v[0]) ? 'Ổn định' : 'Thiếu số';
-      return `<tr><td class="t">${esc(z.name)}${d.miss && d.miss.length ? ` <span class="tag warn">${d.miss.join(', ')}</span>` : ''}</td><td><b>${f(v[0])}</b></td><td>${f(v[1])}</td><td>${f(v[2])}</td><td class="sep ${tt(v[0], v[1])}">${dd(v[0], v[1])}</td><td>${f(l)}</td><td class="${tt(v[0], l)}">${dd(v[0], l)}</td><td class="t">${fl}</td></tr>`; }).join('')}
-    <tr class="tot"><td class="t">Khu vực</td><td>${f(A.area.W[0] && A.area.W[0][key])}</td><td>${f(A.area.W[1] && A.area.W[1][key])}</td><td>${f(A.area.W[2] && A.area.W[2][key])}</td><td class="sep">${A.area.W[0] && A.area.W[1] ? (key === 'ex' ? dpt(A.area.W[0][key] - A.area.W[1][key]) : dp(A.area.W[0][key] / A.area.W[1][key] - 1)) : '–'}</td><td>${f(A.area.L && A.area.L[key])}</td><td>${A.area.W[0] && A.area.L ? (key === 'ex' ? dpt(A.area.W[0][key] - A.area.L[key]) : dp(A.area.W[0][key] / A.area.L[key] - 1)) : '–'}</td><td></td></tr></tbody></table></div>`;
-  const K = areaKey(A, D);
-  let h = `<div class="card"><div class="ct">Kết luận</div><ul class="klist">${K.map((t) => `<li>${t}</li>`).join('')}</ul></div>`;
-  h += tbl('SPP theo kỳ (nghìn đ/khách)', 'spp', fs, 'sppDown2') + tbl('Tỷ lệ Extra combo 1-2 tại quầy', 'ex', fx, 'exDown2');
-  h += `<div class="card" style="margin-top:12px"><div class="ct">Từng rạp: nguyên nhân và việc cần làm</div>${D.filter(({ d }) => d.spp).sort((p, q) => (q.d.sppDown2 - p.d.sppDown2) || ((p.d.dS || 0) - (q.d.dS || 0))).map(({ z, d }) => `<div class="cdx"><div class="cdh"><b>${esc(z.name)}</b> · SPP ${fR(d.spp[0])} (${d.dS >= 0 ? '+' : '−'}${fR(Math.abs(d.dS))} so với ${d.bl})${d.sppDown2 ? ' · <b class="bad">giảm 2 kỳ liên tiếp</b>' : ''} · Extra ${pc(d.ex[0])}</div>
-    ${d.causes.length ? `<div class="cdl">Nguyên nhân</div><ul>${d.causes.slice(0, 4).map((x) => `<li>${x.t}</li>`).join('')}</ul>` : ''}${d.acts.length ? `<div class="cdl">Việc cần làm</div><ul>${d.acts.map((t) => `<li>${t}</li>`).join('')}</ul>` : ''}${d.checks.length ? `<div class="cdl">Cần kiểm chứng tại rạp</div><ul>${d.checks.map((t) => `<li>${t}</li>`).join('')}</ul>` : ''}</div>`).join('')}</div>`;
+  const row = (name, v, l, f, isP, flag, noEv) => { const dd = (x, y) => (!fin(x) || !fin(y) ? '–' : isP ? dpt(x - y) : dp(x / y - 1)); const tt = (x, y) => (fin(x) && fin(y) ? tone('num', x - y) : '');
+    const fl = flag ? `<b class="bad">Giảm 2 kỳ liên tiếp</b>` : fin(v[0]) && fin(v[1]) && v[0] < v[1] - (isP ? 0.005 : 0.2) ? 'Giảm' : fin(v[0]) && fin(v[1]) && v[0] > v[1] + (isP ? 0.005 : 0.2) ? '<span class="good">Tăng</span>' : fin(v[0]) ? 'Ổn định' : 'Thiếu số';
+    return `<td><b>${f(v[0])}</b></td><td>${f(v[1])}</td><td>${f(v[2])}</td><td class="sep ${tt(v[0], v[1])}">${dd(v[0], v[1])}</td><td>${f(l)}</td><td class="${tt(v[0], l)}">${dd(v[0], l)}</td><td class="t">${noEv ? '' : fl}</td>`; };
+  const grp = (key, f, flagKey, aw) => D.map(({ z, d }) => `<tr><td class="t">${esc(z.name)}${d.miss && d.miss.length ? ` <span class="tag warn">${d.miss.join(', ')}</span>` : ''}</td>${row(z.name, d[key] || [], d[key + 'L'], f, key !== 'spp', flagKey && d[flagKey])}</tr>`).join('')
+    + (aw ? `<tr class="tot"><td class="t">Khu vực</td>${row('', [0, 1, 2].map((i) => A.area.W[i] && A.area.W[i][key]), A.area.L && A.area.L[key], f, key !== 'spp', false, 1)}</tr>` : '');
+  const head = `<thead><tr><th class="t">Rạp</th><th>${A.labs[0]}</th><th>${A.labs[1]}</th><th>${A.labs[2]}</th><th class="sep">± kỳ trước</th><th>${A.lmLab}</th><th>± TB tháng</th><th class="t">Đánh giá</th></tr></thead>`;
+  let h = `<div class="card tw"><div class="ct">SPP theo kỳ (nghìn đ/khách)</div><table class="cmp">${head}<tbody>${grp('spp', fs, 'sppDown2', 1)}</tbody></table></div>`;
+  h += `<div class="card tw" style="margin-top:12px"><div class="ct">Tỷ lệ Extra và U22 trong combo 1-2 tại quầy</div><table class="cmp">${head}<tbody><tr class="grp"><td class="t" colspan="8">%Extra combo 1-2</td></tr>${grp('ex', fx, 'exDown2', 1)}<tr class="grp"><td class="t" colspan="8">%U22 combo 1-2 (cần Concession Sales)</td></tr>${grp('u22', fx, null, 1)}</tbody></table></div>`;
+  const K = areaKey(A, D); h += `<div class="card" style="margin-top:12px"><div class="ct">Kết luận</div><ul class="klist">${K.map((t) => `<li>${t}</li>`).join('')}</ul></div>`;
   return h;
 }
 function areaKey(A, D) {
@@ -3076,8 +3084,8 @@ function areaKey(A, D) {
     const dnx = D.filter(({ d }) => d.exDown2).map(({ z }) => z.name); K.push(`Extra combo tại quầy khu vực ${tr}: ${pc(aw[2].ex)} → ${pc(aw[1].ex)} → ${pc(aw[0].ex)}${A.area.L && fin(A.area.L.ex) ? `, ${aw[0].ex < A.area.L.ex ? 'thấp hơn' : 'cao hơn'} ${A.lmLab.replace('TB', 'bình quân')} (${pc(A.area.L.ex)})` : ''}${dnx.length ? `. Rạp giảm 2 kỳ liên tiếp: ${dnx.join(', ')}` : ''}.`); }
   // nguyên nhân chung
   const srtDn = D.filter(({ d }) => d.causes.some((x) => /SRT AD/.test(x.t) && x.v < 0)).map(({ z }) => z.name), onUp = D.filter(({ z }) => { const [a, b] = z.X; return a && b && fin(a.onSh) && fin(b.onSh) && a.onSh - b.onSh >= 0.02; }).map(({ z }) => z.name);
-  if (srtDn.length) K.push(`Nguyên nhân chính ở ${srtDn.join(', ')} là tỷ lệ khách mua F&B giảm, không phải giá trị mỗi lần mua.`);
-  if (onUp.length) K.push(`Khách mua vé online tăng ở ${onUp.join(', ')}: khách qua quầy ít đi nên cơ hội mời combo và nâng size tại quầy giảm. Mức ảnh hưởng lên SPP của từng rạp xem ở bảng dịch chuyển kênh.`);
+  if (srtDn.length) K.push(`Nguyên nhân chính ở ${srtDn.join(', ')} là SRT AD giảm, không phải SPT.`);
+  if (onUp.length) K.push(`Khách mua vé online tăng ở ${onUp.join(', ')}: khách qua quầy ít đi nên cơ hội mời combo và nâng size tại quầy giảm. Một phần khách vé online đi thẳng vào phòng chiếu, không ghé quầy mua bắp nước.`);
   const miss = D.filter(({ d }) => d.miss && d.miss.length).map(({ z, d }) => `${z.name} (${d.miss.join(', ')})`); if (miss.length) K.push(`Chưa đủ số để kết luận chắc: ${miss.join('; ')}.`);
   return K;
 }
@@ -3092,11 +3100,11 @@ async function areaPDF() {
     const fl = (v, f2, th) => (f2 ? { t: 'Giảm 2 kỳ liên tiếp', bold: true, color: R.C.red } : fin(v[0]) && fin(v[1]) && v[0] < v[1] - th ? { t: 'Giảm', color: R.C.red } : fin(v[0]) && fin(v[1]) && v[0] > v[1] + th ? { t: 'Tăng', color: R.C.green } : fin(v[0]) ? 'Ổn định' : 'Thiếu số');
     const row = (lab, v, l, f, isP, f2) => { const dd = (x, y) => (!fin(x) || !fin(y) ? '–' : isP ? dpt(x - y) : dp(x / y - 1)); return [lab, { t: f(v[0]), bold: true }, f(v[1]), f(v[2]), dd(v[0], v[1]), f(l), dd(v[0], l), fl(v, f2, isP ? 0.005 : 0.2)]; };
     R.table([{ t: 'Chỉ tiêu', w: 110 }, { t: A.labs[0], w: 55 }, { t: A.labs[1], w: 55 }, { t: A.labs[2], w: 55 }, { t: '± kỳ trước', w: 50 }, { t: A.lmLab, w: 55 }, { t: '± TB tháng', w: 50 }, { t: 'Đánh giá', w: 80, al: 'left' }],
-      [row('SPP (nghìn đ/khách)', d.spp, d.sppL, fR, false, d.sppDown2), row('%Extra combo 1-2 tại quầy', d.ex, d.exL, (v) => pc(v), true, d.exDown2)]);
+      [row('SPP (nghìn đ/khách)', d.spp, d.sppL, fR, false, d.sppDown2), row('%Extra combo 1-2 tại quầy', d.ex, d.exL, (v) => pc(v), true, d.exDown2), row('%U22 combo 1-2 tại quầy', d.u22 || [], d.u22L, (v) => pc(v), true, false)]);
     d.causes.slice(0, 5).forEach((x) => R.bullet(x.t, { size: 9 })); R.gap(4); }
   // 2. các bảng F&B (trừ top item), mỗi bảng kèm nhận định
   MD.T.filter((t) => !/^top/.test(t.key)).forEach((t) => { R.h3(t.title); const n = t.head.length; const cols = t.head.map((x, i) => (t.wide ? { t: x, w: i < 2 ? 120 : 55, al: i < 2 ? 'left' : undefined } : { t: i ? x : x || 'Chỉ tiêu', w: i ? (n >= 9 ? 45 : n > 6 ? 57 : 62) : n > 6 ? 110 : 180 }));
-    R.table(cols, t.rows.map((r) => (r.sec ? [{ t: r.sec, bold: true, fill: '#F5F6F8' }, ...Array(n - 1).fill({ t: '', fill: '#F5F6F8' })] : r.cells.map((x, i) => ({ t: x.t, bold: !!x.b || r.cls === 'tot', color: x.tone === 'bad' ? R.C.red : x.tone === 'good' ? R.C.green : null })))), { size: 8 });
+    R.table(cols, t.rows.map((r) => (r.sec ? [{ t: r.sec, bold: true, fill: '#F5F6F8' }, ...Array(n - 1).fill({ t: '', fill: '#F5F6F8' })] : r.cells.map((x, i) => ({ t: x.t, fill: /ron/.test(r.cls || '') ? '#F1F5FB' : /roff/.test(r.cls || '') ? '#FBF7EF' : undefined, bold: !!x.b || r.cls === 'tot', color: x.tone === 'bad' ? R.C.red : x.tone === 'good' ? R.C.green : null })))), { size: 8 });
     if (t.notes.length) { if (t.noteTitle) R.p(t.noteTitle, { size: 9, bold: true }); pdfNotes(R, t.notes); } R.gap(4); });
   // 3. tổng hợp
   const SM = fm.SM || fnbSum(c, MD, z ? z.d : null);
