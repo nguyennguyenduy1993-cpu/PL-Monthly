@@ -244,12 +244,14 @@ tr.roff td{background:#FBF7EF}
 .misst td{vertical-align:top;padding:8px;width:28%}
 .misst td:first-child{width:16%}
 .misst .mday{margin:0 4px 4px 0}
+
+.klist li.arr{list-style:none;margin-left:-18px}
 </style>
 </head>
 <body>
 <div class="top">
  <div class="bar">
-  <div class="modes" id="modes" role="tablist"><button type="button" data-m="pl" class="on">P&amp;L</button><button type="button" data-m="daily">Daily</button></div>
+  <div class="modes" id="modes" role="tablist"><button type="button" data-m="pl" class="on">P&amp;L</button><button type="button" data-m="fnb">F&amp;B</button><button type="button" data-m="daily">Daily</button></div>
   <div class="tabs" id="tabs" role="tablist"></div>
   <div class="sp"></div>
   <div class="ctl ysel0"><label for="yearSel">Năm</label><select id="yearSel" class="sel"></select></div>
@@ -713,7 +715,7 @@ const CI = Object.fromEntries(CIN.map((c) => [c.code, c]));
 // rạp tài khoản đang đăng nhập được xem (AM: cả 6 rạp; tài khoản rạp: đúng 1 rạp)
 const CINV = () => (window.ACC ? CIN.filter((c) => window.ACC.cinemas.includes(c.code)) : CIN);
 const canSee = (code) => CINV().some((c) => c.code === code);
-const SECS = [['overall', 'Overall'], ['year', '12 tháng'], ['market', 'Market share'], ['film', 'Top film'], ['ticket', 'Ticket type'], ['coclass', 'CO sale by item class'], ['coitems', 'Top 10 CO items'], ['opex', 'OPEX']];
+const SECS = [['health', 'Sức khỏe rạp'], ['overall', 'Overall'], ['year', '12 tháng'], ['market', 'Market share'], ['film', 'Top film'], ['ticket', 'Ticket type'], ['coclass', 'CO sale by item class'], ['fnb', 'F&B theo tháng'], ['opex', 'OPEX']];
 const S = { cin: localStorage.getItem('plm_cin') || 'QT', year: 2026, months: null, up: { vista: {}, bp: {}, market: {}, hc: {}, plan: {}, cs: {}, opex: {}, opexnote: {}, dxl: {}, dmk: {}, dcs: {}, doph: {}, dtx: {} }, mode: localStorage.getItem('plm_mode') || 'pl', fb: null };
 const K = (c, y, m) => `${c}_${y}_${m}`;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
@@ -1084,7 +1086,7 @@ function marketView(c, P) {
     return { ...r, share, adm_prev: prev && prev[r.exhibitor] ? prev[r.exhibitor].adm : null, share_prev: sp, pts_prev: fin(sp) ? share - sp : null, adm_ly: ly && ly[r.exhibitor] ? ly[r.exhibitor].adm : null, share_ly: sl, pts_ly: fin(sl) ? share - sl : null, me: r.exhibitor === ci.mk }; }).sort((a, b) => b.adm - a.adm);
   const g = (o, T) => (o && T ? Object.values(o).filter((r) => r.chain === 'GLX').reduce((a, r) => a + r.adm, 0) / T : null);
   const gs = g(cur, TA), gp = g(prev, TP), gl = g(ly, TL);
-  return { cluster: ci.cluster, months: M, rows, me: rows.find((r) => r.me), TA, prevOk: !!prev, lyOk: !!ly,
+  return { cluster: ci.cluster, months: M, rows, me: rows.find((r) => r.me), TA, TP, TL, prevOk: !!prev, lyOk: !!ly,
     glx: { adm: rows.filter((r) => r.chain === 'GLX').reduce((a, r) => a + r.adm, 0), share: gs, share_prev: gp, pts_prev: fin(gp) ? gs - gp : null, share_ly: gl, pts_ly: fin(gl) ? gs - gl : null }, avail };
 }
 
@@ -1128,14 +1130,14 @@ const hbar = (rows, opt = {}) => { const mx = Math.max(...rows.map((r) => r.shar
 const star = (o, f) => (o && o.miss && o.miss[f] && o.miss[f].length ? `<span class="star" title="Thiếu số: ${o.miss[f].map(mlab).join(', ')}">*</span>` : '');
 
 function setMode() {
-  if (S.mode === 'pl' && !window.PLOK) S.mode = 'daily';
-  const dm = S.mode === 'daily'; document.querySelectorAll('#modes button').forEach((b) => b.classList.toggle('on', b.dataset.m === S.mode));
+  if ((S.mode === 'pl' || S.mode === 'fnb') && !window.PLOK) S.mode = 'daily';
+  const dm = S.mode === 'daily' || S.mode === 'fnb'; document.querySelectorAll('#modes button').forEach((b) => b.classList.toggle('on', b.dataset.m === S.mode));
   const tg = (sel, show) => { const e = $(sel); if (e) e.hidden = !show; }; tg('.ctl.dday', dm); tg('.ctl.dsel', !dm); tg('.ctl.ysel0', !dm);
-  const want = dm ? 'd' : 'p'; const nav = $('#nav'); if (nav && (nav.dataset.k || '')[0] !== want) { nav.dataset.k = want; nav.innerHTML = (dm ? DSECS : SECS).map(([id, t]) => `<a data-s="${id}">${t}</a>`).join(''); }
-  document.title = dm ? 'Daily CO' : 'P&L Monthly';
+  const want = S.mode === 'fnb' ? 'f' : dm ? 'd' : 'p'; const nav = $('#nav'); if (nav && (nav.dataset.k || '')[0] !== want) { nav.dataset.k = want; nav.innerHTML = (S.mode === 'fnb' ? [] : dm ? DSECS : SECS).map(([id, t]) => `<a data-s="${id}">${t}</a>`).join(''); }
+  document.title = S.mode === 'fnb' ? 'F&B' : dm ? 'Daily CO' : 'P&L Monthly';
 }
 function render() { if (typeof dcClear === 'function') dcClear();
-  setMode(); if (typeof missBadge === 'function') missBadge(); if (S.mode === 'daily') return renderDaily();
+  setMode(); if (typeof missBadge === 'function') missBadge(); if (S.mode === 'daily') return renderDaily(); if (S.mode === 'fnb') return renderFnb();
   if (!S.months || !S.months.length) { const a = availMonths(S.cin, S.year); S.months = [a.length ? a[a.length - 1] : 1]; }
   const P = period(); const c = S.cin; const ci = CI[c];
   document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('on', b.dataset.c === c));
@@ -1143,14 +1145,15 @@ function render() { if (typeof dcClear === 'function') dcClear();
   let h = `<div class="head"><h1>${esc(ci.name)}</h1></div>`;
   if (!P.cur) { $('#main').innerHTML = h + empty(`Chưa có số cho ${plabel(P.y, P.M)}.`, ['up', 'Tải dữ liệu']); return; }
   const V = vistaPeriod(c, P.y, P.M); const NT = sectionNotes(c, P, V);
-  h += sec('overall', '01', 'Overall', '', overall(P) + notes(NT.overall));
-  h += sec('year', '02', `Tổng quan 12 tháng ${P.y}`, '', `<div id="yearBody">${yearView(P)}</div>`);
-  h += sec('market', '03', 'Market share', ci.cluster ? 'Cụm ' + ci.cluster : '', market(P) + notes(NT.market));
-  h += sec('film', '04', 'Top film', '', film(V, P) + notes(NT.film));
-  h += sec('ticket', '05', 'Ticket type', '', ticket(V, P) + notes(NT.ticket));
-  h += sec('coclass', '06', 'CO sale by item class', '', coclass(V, P) + notes(NT.coclass));
-  h += sec('coitems', '07', 'Top 10 CO items', '', coitems(V, P) + notes(NT.coitems));
-  h += sec('opex', '08', 'OPEX', `<span class="bts"><button class="btn sm" type="button" data-act="opexIn">Nhập OPEX 2026</button><button class="btn sm" type="button" data-act="opexEx">Giải trình OPEX</button></span>`, opex(P) + notes(NT.opex));
+  h += sec('health', '01', 'Sức khỏe rạp', '', safeSec(() => healthCheck(P)));
+  h += sec('overall', '02', 'Overall', '', overall(P) + notes(NT.overall));
+  h += sec('year', '03', `Tổng quan 12 tháng ${P.y}`, '', `<div id="yearBody">${yearView(P)}</div>`);
+  h += sec('market', '04', 'Market share', ci.cluster ? 'Cụm ' + ci.cluster : '', market(P) + notes(NT.market));
+  h += sec('film', '05', 'Top film', '', film(V, P) + notes(NT.film));
+  h += sec('ticket', '06', 'Ticket type', '', ticket(V, P) + notes(NT.ticket));
+  h += sec('coclass', '07', 'CO sale by item class', '', coclass(V, P) + notes(NT.coclass));
+  h += sec('fnb', '08', 'F&B theo tháng', 'This month vs Last year', plFnb(P));
+  h += sec('opex', '09', 'OPEX', `<span class="bts"><button class="btn sm" type="button" data-act="opexIn">Nhập OPEX 2026</button><button class="btn sm" type="button" data-act="opexEx">Giải trình OPEX</button></span>`, opex(P) + notes(NT.opex));
   $('#main').innerHTML = h;
   bindYear(P); spy();
 }
@@ -1712,7 +1715,7 @@ async function init() {
   $('#mFrom').innerHTML = opts; $('#mTo').innerHTML = opts;
   const setRange = () => { let a = +$('#mFrom').value, b = +$('#mTo').value; if (a > b) [a, b] = [b, a]; S.months = Array.from({ length: b - a + 1 }, (_, k) => a + k); render(); };
   $('#mFrom').onchange = setRange; $('#mTo').onchange = setRange;
-  $('#modes').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; if (b.dataset.m === 'pl' && !window.PLOK) { needLogin(); return; } S.mode = b.dataset.m; localStorage.setItem('plm_mode', S.mode); render(); window.scrollTo(0, 0); };
+  $('#modes').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; if ((b.dataset.m === 'pl' || b.dataset.m === 'fnb') && !window.PLOK) { needLogin(b.dataset.m); return; } S.mode = b.dataset.m; localStorage.setItem('plm_mode', S.mode); render(); window.scrollTo(0, 0); };
   $('#dFromB').onclick = (e) => { e.stopPropagation(); calOpen('from'); };
   $('#dToB').onclick = (e) => { e.stopPropagation(); calOpen('to'); };
   $('#nav').onclick = (e) => { const a = e.target.closest('a'); if (a) document.getElementById(a.dataset.s)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
@@ -2306,8 +2309,6 @@ function renderDaily() {
   if (!days.length) { $('#main').innerHTML = h + empty('Chưa có số daily. Tải PDF Marketing Report và Concession Item Sales theo ngày, hoặc file Daily CO Excel.', ['up', 'Tải dữ liệu']); return; }
   if (!dAgg(c, dRange(S.dfrom, S.dto))) { const t = S.dfrom === S.dto ? `ngày ${dLab(S.dto)}/${S.dto.slice(0, 4)}` : `từ ${dShort(S.dfrom)} đến ${dShort(S.dto)}/${S.dto.slice(0, 4)}`; $('#main').innerHTML = h + empty(`Chưa upload data ${t}. Ngày gần nhất có số: ${dLab(last)}/${last.slice(0, 4)}.`, ['up', 'Tải dữ liệu']); return; }
   const P = dPeriod(c), d = P.to, r = dAgg(c, P.days), y = dAgg(c, P.b1), w = dAgg(c, P.b2);
-  const isAM = window.ACC && window.ACC.role === 'AM'; let hA = '';
-  if (isAM) { const AW = areaWeeks(P).W; hA = sec('darea', 'F1', `Khu vực 6 rạp – ${rngLab(AW[0])}`, '', safeSec(() => areaSection(P))); }
   const ext = P.single; // 1 ngày: thêm WTD và MTD
   const ws = weekStart(d), wD = dRange(ws, d), wtd = ext ? dAgg(c, wD) : null, wtdL = ext ? dAgg(c, wD.map((x) => dAdd(x, -7))) : null;
   const md = monthDays(d).filter((x) => x <= d), mtd = ext ? dAgg(c, md) : null, mtdL = ext ? dAgg(c, lmDays(md)) : null;
@@ -2334,14 +2335,11 @@ function renderDaily() {
   const ct = `<div class="card tw"><table><thead><tr><th class="t">Loại</th><th>Số phần</th><th>%Hit</th><th>%Hit ${P.l1.toLowerCase()}</th><th>±</th><th>%Hit ${P.l2.toLowerCase().replace(/^(t\d|cn)/i, (x) => x.toUpperCase())}</th><th>±</th>${ext ? '<th class="sep">SL WTD</th><th>%Hit WTD</th><th>±</th><th class="sep">SL MTD</th><th>%Hit MTD</th><th>±</th>' : ''}</tr></thead><tbody>${keys.map(([l, k]) => `<tr><td class="t">${l}</td><td>${f0(q(r, k))}</td><td><b>${pc(hit(r, k))}</b></td><td>${pc(hit(y, k))}</td><td>${hd(hit(r, k), hit(y, k))}</td><td>${pc(hit(w, k))}</td><td class="${tone('rev', dDiff('online', hit(r, k), hit(w, k)))}">${hd(hit(r, k), hit(w, k))}</td>${ext ? `<td class="sep">${f0(q(wtd, k))}</td><td>${pc(hit(wtd, k))}</td><td>${hd(hit(wtd, k), hit(wtdL, k))}</td><td class="sep">${f0(q(mtd, k))}</td><td>${pc(hit(mtd, k))}</td><td>${hd(hit(mtd, k), hit(mtdL, k))}</td>` : ''}</tr>`).join('')}</tbody></table></div>`;
   const cmiss = P.days.filter((x) => !dGet('dcs', DK(c, x)) && !dGet('dxl', DK(c, x)));
   h += sec('dco', '03', 'Concession (%Hit = số phần / admits)', cmiss.length ? `<span class="miss-s">Thiếu Concession Sales ${missTxt(cmiss)}</span>` : '', ct);
-  let hF = ''; if (isAM) { const AW = areaWeeks(P).W; hF = sec('dfnb', 'F2', `F&B ${ci.short || ci.name} – ${rngLab(AW[0])} so với 2 kỳ liền trước`, `<span class="bts"><button class="btn sm" type="button" data-act="apdf" data-short="1">PDF tóm tắt</button><button class="btn sm pri" type="button" data-act="apdf">PDF đầy đủ ${esc(ci.short || ci.name)}</button></span>`, safeSec(() => fnbTables(c, P))); }
   h += sec('dnote', '04', P.single ? 'Nhận định trong ngày' : 'Nhận định trong kỳ', '', notes(dailyNotes(c, P)));
   const tdays = P.single ? monthDays(d) : P.days;
   h += sec('dmonth', '05', P.single ? `Daily CO tháng ${d.slice(5, 7)}/${d.slice(0, 4)}` : `Daily CO ${P.lab}/${d.slice(0, 4)}`, `<span class="bts"><button class="btn sm${S.dhit ? '' : ' on'}" data-act="dq">Số phần</button><button class="btn sm${S.dhit ? ' on' : ''}" data-act="dh">%Hit</button></span>`, monthTable(c, tdays, P));
-  // 2 cụm: Daily (01–05) và Phân tích F&B (chỉ AM: khu vực 6 rạp + rạp đang chọn)
-  if (isAM) h = h.replace('</div>', '</div><div class="clu">Daily</div>') + `<div class="clu">Phân tích F&B</div>${hA}${hF}`;
   $('#main').innerHTML = h;
-  const nav = $('#nav'); const ids = [...document.querySelectorAll('#main section.blk')].map((e) => e.id); const NM = { darea: 'F&B khu vực', dkpi: 'Tổng quan', dfilm: 'Top film', dco: 'Concession', dfnb: 'F&B rạp', dnote: 'Nhận định', dmonth: 'Bảng tháng' };
+  const nav = $('#nav'); const ids = [...document.querySelectorAll('#main section.blk')].map((e) => e.id); const NM = { dkpi: 'Tổng quan', dfilm: 'Top film', dco: 'Concession', dnote: 'Nhận định', dmonth: 'Bảng tháng' };
   if (nav) { nav.dataset.k = 'd' + ids.join(); nav.innerHTML = ids.map((id) => `<a data-s="${id}">${NM[id] || id}</a>`).join(''); }
   dspy();
 }
@@ -2403,7 +2401,7 @@ function missScan(ref0) {
   return CINV().map((ci) => { const c = ci.code; const L = { mk: [], cs: [], tx: [] };
     md.forEach((d) => { const k = DK(c, d), xl = !!dGet('dxl', k); if (!dGet('dmk', k) && !xl) L.mk.push(d); if (!dGet('dcs', k) && !xl) L.cs.push(d); if (!dGet('dtx', k)) L.tx.push(d); });
     return { c, name: ci.short || ci.name, L, rows: [...new Set([...L.mk, ...L.cs, ...L.tx])] }; }); }
-function missBadge() { const b = $('#bMiss'); if (!b) return; const show = S.mode === 'daily'; b.hidden = !show; if (!show) return;
+function missBadge() { const b = $('#bMiss'); if (!b) return; const show = S.mode === 'daily' || S.mode === 'fnb'; b.hidden = !show; if (!show) return;
   const n = missScan().reduce((a, x) => a + x.rows.length, 0); $('#missN').textContent = n; b.classList.toggle('zero', !n); }
 function missModal() {
   let ref = (S.dto || dYesterday()).slice(0, 7) + '-01'; const T = { none: 'Chưa upload', mk: 'Thiếu Marketing Report', cs: 'Thiếu Concession Sales' };
@@ -2727,7 +2725,7 @@ function PDFReport(title, sub) {
     h(t) { need(30); y += 6; d.text(t, M, y + 11, { size: 12, bold: true, color: C.blue }); y += 18; },
     h3(t, color) { need(20); d.text(t, M, y + 10, { size: 10.5, bold: true, color: color || C.ink }); y += 15; },
     p(t, o = {}) { const size = o.size || 9.5; const L = d.wrap(t, CW - (o.indent || 0), size, o.bold); L.forEach((ln) => { need(size + 4); d.text(ln, M + (o.indent || 0), y + size, { size, bold: o.bold, color: o.color || C.ink }); y += size + 3.5; }); y += o.gap ?? 3; },
-    bullet(t, o = {}) { const size = o.size || 9.5, ind = 15, x0 = o.indent || 0; const L = d.wrap(t, CW - ind - x0, size, o.bold); L.forEach((ln, i) => { need(size + 4); if (!i) d.text(o.mark || '•', M + 2 + x0, y + size, { size, color: o.markColor || C.blue, bold: true }); d.text(ln, M + ind + x0, y + size, { size, bold: o.bold, color: o.color || C.ink }); y += size + 3.5; }); if (o.sub) { const L2 = d.wrap(o.sub, CW - ind - 10, size - 0.5); L2.forEach((ln, i) => { need(size + 3); d.text((i ? '  ' : '→ ') + ln, M + ind + 2, y + size - 0.5, { size: size - 0.5, color: C.mut }); y += size + 3; }); } y += 2; },
+    bullet(t, o = {}) { const arr = !o.mark && /^\s*=>/.test(t), size = o.size || 9.5, ind = arr ? 0 : 15, x0 = arr ? 0 : o.indent || 0; const L = d.wrap(t, CW - ind - x0, size, o.bold); L.forEach((ln, i) => { need(size + 4); if (!i && !arr) d.text(o.mark || '•', M + 2 + x0, y + size, { size, color: o.markColor || C.blue, bold: true }); d.text(ln, M + ind + x0, y + size, { size, bold: o.bold, color: o.color || C.ink }); y += size + 3.5; }); if (o.sub) { const L2 = d.wrap(o.sub, CW - ind - 10, size - 0.5); L2.forEach((ln, i) => { need(size + 3); d.text((i ? '  ' : '→ ') + ln, M + ind + 2, y + size - 0.5, { size: size - 0.5, color: C.mut }); y += size + 3; }); } y += 2; },
     // cols: [{t, w, al}] ; rows: [[cell...]] cell = string | {t, bold, color, fill}
     table(cols, rows, o = {}) { const size = o.size || 8.5, pad = 4, tw = cols.reduce((a, c) => a + c.w, 0), k = CW / tw; const ws = cols.map((c) => c.w * k); const grid = (y0, h, noV) => { d.rect(M, y0, CW, h, { stroke: '#B8BEC6', lw: 0.5 }); if (noV) return; let gx = M; ws.slice(0, -1).forEach((w) => { gx += w; d.line(gx, y0, gx, y0 + h, { color: '#B8BEC6', lw: 0.5 }); }); };
       const hdr = () => { const HL = cols.map((c, i) => d.wrap(c.t, ws[i] - 2 * pad, size, true)); const hh = Math.max(...HL.map((l) => l.length)) * (size + 2.5) + 2 * pad - 0.5; need(hh + size + 2 * pad); let x = M; d.rect(M, y, CW, hh, { fill: C.head });
@@ -2756,7 +2754,7 @@ function missBanner(c, sets) { // sets: [[label, days]]
   const rows = sets.map(([lab, days]) => { const m = dMiss(c, days); const p = []; const all = (L) => (L.length === days.length ? 'cả kỳ' : missTxt(L));
       const xlOnly = days.filter((d) => m.mk.includes(d) && m.cs.includes(d) && !m.any.includes(d)), mk = m.mk.filter((d) => !m.any.includes(d) && !xlOnly.includes(d)), cs = m.cs.filter((d) => !m.any.includes(d) && !xlOnly.includes(d));
       if (m.any.length) p.push(`chưa upload ${all(m.any)}`); if (xlOnly.length) p.push(`thiếu Marketing Report và Concession Sales ${all(xlOnly)} (đang dùng số Daily CO Excel)`);
-      if (mk.length) p.push(`thiếu Marketing Report ${missTxt(mk)}`); if (cs.length) p.push(`thiếu Concession Sales ${missTxt(cs)}`); return p.length ? `<div><b>${lab} (${rngLab(days)}):</b> ${p.join(' · ')}</div>` : ''; }).filter(Boolean);
+      if (mk.length) p.push(`thiếu Marketing Report ${missTxt(mk)}`); if (cs.length) p.push(`thiếu Concession Sales ${missTxt(cs)}`); const tx = days.filter((d) => !dGet('dtx', DK(c, d))); if (tx.length) p.push(`thiếu Transactions Export ${all(tx)}`); return p.length ? `<div><b>${lab} (${rngLab(days)}):</b> ${p.join(' · ')}</div>` : ''; }).filter(Boolean);
   return rows.length ? `<div class="miss-bn">${rows.join('')}</div>` : ''; }
 
 // ---- nhóm món theo kênh mua F&B (online / tại quầy) và loại; mọi tỷ lệ tính trên tổng admits ----
@@ -3040,7 +3038,7 @@ function fnbSum(c, MD, d) { const [A, B] = MD.X; if (!A) return []; const ML = O
   if (t0) { add('BO Offline mua CO Offline', t0.rOff, t1 ? t1.rOff : null, 'p', 'Đối chiếu tỷ lệ mời chào thành công theo nhân viên, theo ca; nghe lại kịch bản mời khi bán vé.'); add('BO Online mua CO Offline (đến quầy mua)', t0.rOnCtr, t1 ? t1.rOnCtr : null, 'p', 'Mời CO khi khách online đến soát vé.'); add('BO Online mua CO Online', t0.rOnCO, t1 ? t1.rOnCO : null, 'p', 'Kiểm tra combo hiển thị trên app/web.'); add('Tổng Transaction CO / Transaction BO', t0.rAll, t1 ? t1.rAll : null, 'p', 'Giao chỉ tiêu Transaction CO / BO theo ca.'); add('SPP CO Offline khách đã mua (nghìn đ)', t0.sppOff, t1 ? t1.sppOff : null, 'r', 'Mời nâng size và thêm món theo số người trong nhóm.'); add('SPP CO Offline trên khách BO Online chưa mua CO Online (nghìn đ)', t0.sppCtr, t1 ? t1.sppCtr : null, 'r', 'Mời CO khi khách online đến soát vé.'); add('Doanh thu CO Offline / tổng admits (nghìn đ)', t0.dtOff, t1 ? t1.dtOff : null, 'r', ''); }
   add('Combo tại quầy / 100 khách', A.offCb, B_((x) => x.offCb), 'h', 'Đối chiếu tỷ lệ mời combo theo nhân viên, theo ca.', fin(cs.real) && cs.real >= -0.3 && A.offCb < (B ? B.offCb : 0) ? { ev: { t: 'Khách chuyển sang mua online' }, neutral: true } : {});
   if (fin(cs.lA)) add('Bán lẻ tại quầy / 100 khách', cs.lA / 100, fin(cs.lB) ? cs.lB / 100 : null, 'h', 'Khi khách gọi bắp hoặc nước lẻ, chào combo kèm chênh lệch giá cụ thể.', { neutral: true, force: fin(cs.cA) && fin(cs.cB) && cs.cA < cs.cB - 0.3 && cs.lA > cs.lB + 0.3 });
-  if (cs.good) out.push({ item: 'Bán tại quầy', now: '', prev: '', d: '', dTone: '', ev: cs.good === 'good' ? { t: 'Tốt', tone: 'good' } : cs.good === 'mix' ? { t: 'Số lượng giữ, Extra giảm', tone: 'bad' } : cs.good === 'open' ? { t: 'Một phần giảm', tone: 'bad' } : { t: 'Chưa tốt', tone: 'bad' }, act: cs.good === 'bad' ? 'Kèm ca tại quầy giờ cao điểm, chấm %Extra và combo/100 khách theo nhân viên mỗi ngày.' : '' });
+  if (cs.good) out.push({ item: 'Bán tại quầy', now: '', prev: '', d: '', dTone: '', ev: cs.good === 'good' ? { t: 'Tốt', tone: 'good' } : cs.good === 'mix' ? { t: 'Số lượng giữ, Extra giảm', tone: 'bad' } : cs.good === 'open' ? { t: 'Một phần giảm', tone: 'bad' } : { t: 'Cần cải thiện', tone: 'bad' }, act: cs.good === 'bad' ? 'Kèm ca tại quầy giờ cao điểm, chấm %Extra và combo/100 khách theo nhân viên mỗi ngày.' : '' });
   add('% khách mua vé online', A.onSh, B_((x) => x.onSh), 'p', `Mời combo khi khách online đến soát vé${ML && ML.lv === 'STD' ? '; đề xuất HO đưa combo Extra vào bảng gợi ý online' : ''}.`, { neutral: true, force: fin(ch.dk) && ch.dk > 0.005 });
   add('SPP phần F&B mua online (nghìn đ/khách)', A.onSpp, B_((x) => x.onSpp), 'r', 'Kiểm tra combo hiển thị trên app/web và tình trạng hết món online.');
   add('SPP phần F&B mua tại quầy (nghìn đ/khách)', A.offSpp, B_((x) => x.offSpp), 'r', 'Xem bảng bán tại quầy để biết giảm ở nhóm nào.', fin(cs.real) && cs.real >= -0.3 && MD.K.shift && MD.K.shift.moved >= 0.05 && B && A.offSpp < B.offSpp ? { ev: { t: 'Khách chuyển sang mua online' }, neutral: true } : {});
@@ -3055,18 +3053,41 @@ function fnbWrap(MD, SM) { const [A, B] = MD.X; const out = []; if (!A || !B) re
   if (K.mx && Math.abs(K.mx.spp) >= 0.1) out.push(`Cơ cấu Extra/thường: giá bình quân combo 1-2 ${fR(K.mx.avgB)} → ${fR(K.mx.avgA)} nghìn đ, tác động ${dp1(K.mx.spp)} nghìn đ/khách.`);
   return out; }
 const SUM_HEAD = ['Hạng mục', 'Kỳ này', 'Kỳ trước', '±', 'Đánh giá', 'Việc cần làm'];
-const noteHtml = (N) => `<ul class="klist">${N.map((x) => (typeof x === 'string' ? `<li>${esc(x)}</li>` : `<li>${esc(x.t)}${x.sub && x.sub.length ? `<ul class="ksub">${x.sub.map((y) => `<li>${esc(y)}</li>`).join('')}</ul>` : ''}</li>`)).join('')}</ul>`;
-function fnbTables(c, P) {
-  const W = areaWeeks(P).W; const MD = fnbModel(c, W);
-  let h = missBanner(c, [['Kỳ này', W[0]], ['Kỳ trước', W[1]], ['Kỳ trước nữa', W[2]]]);
-  const z = S._area && S._area.D ? S._area.D.find((q) => q.z.c === c) : null; const SM = fnbSum(c, MD, z ? z.d : null); const WR = fnbWrap(MD, SM);
-  if (SM.length) h += `<div class="card tw" style="margin-top:0"><div class="ct">Overview</div><table class="cmp"><thead><tr>${SUM_HEAD.map((x, i) => `<th class="${i === 0 || i >= 4 ? 't' : ''}">${x}</th>`).join('')}</tr></thead><tbody>${SM.map((r) => `<tr><td class="t">${esc(r.item)}</td><td><b>${esc(r.now)}</b></td><td>${esc(r.prev)}</td><td class="${r.dTone || ''}">${esc(r.d)}</td><td class="t ${r.ev.tone || ''}">${esc(r.ev.t)}</td><td class="t">${esc(r.act)}</td></tr>`).join('')}</tbody></table></div>`;
+const liA = (t) => (/^\s*=>/.test(t) ? '<li class="arr">' : '<li>');
+const noteHtml = (N) => `<ul class="klist">${N.map((x) => (typeof x === 'string' ? `${liA(x)}${esc(x)}</li>` : `${liA(x.t)}${esc(x.t)}${x.sub && x.sub.length ? `<ul class="ksub">${x.sub.map((y) => `<li>${esc(y)}</li>`).join('')}</ul>` : ''}</li>`)).join('')}</ul>`;
+function fnbTables(c, P) { return fnbRender(c, areaWeeks(P).W); }
+// P&L: tháng đang xem so với cùng kỳ năm trước (bỏ cột kỳ thứ 3 và top item)
+const lyTxt = (t) => String(t).replace(/so với kỳ trước nữa/g, 'so với 2 năm trước').replace(/kỳ trước/g, 'cùng kỳ năm trước').replace(/Kỳ trước/g, 'Cùng kỳ năm trước');
+function plAdapt(MD) { MD.T = MD.T.filter((t) => !/^top/.test(t.key));
+  MD.T.forEach((t) => { if (!t.wide && t.head.length >= 6) { const keep = (_, i) => i !== 3 && i !== 5; t.head = t.head.filter(keep).map((x) => x.replace(/^Kỳ này/, 'This month').replace(/^Kỳ trước/, 'Last year').replace('± kỳ trước', '± LY')); t.rows = t.rows.map((r) => (r.sec ? r : { ...r, cells: r.cells.filter(keep) })); }
+    t.notes = t.notes.map((x) => (typeof x === 'string' ? lyTxt(x) : { t: lyTxt(x.t), sub: (x.sub || []).map(lyTxt) })); if (t.noteTitle) t.noteTitle = lyTxt(t.noteTitle); });
+  if (MD.K.txv && MD.K.txv.vt) MD.K.txv.vt = lyTxt(MD.K.txv.vt); }
+function fnbRender(c, W, opt = {}) {
+  const MD = fnbModel(c, W); if (opt.pl) plAdapt(MD);
+  let h = missBanner(c, opt.pl ? [['This month', W[0]], ['Last year', W[1]]] : [['Kỳ này', W[0]], ['Kỳ trước', W[1]], ['Kỳ trước nữa', W[2]]]);
+  const z = !opt.pl && S._area && S._area.D ? S._area.D.find((q) => q.z.c === c) : null; const SM = fnbSum(c, MD, z ? z.d : null); const WR = fnbWrap(MD, SM).map((x) => (opt.pl ? lyTxt(x) : x));
+  const SH = opt.pl ? ['Hạng mục', 'This month', 'Last year', '±', 'Đánh giá', 'Việc cần làm'] : SUM_HEAD;
+  if (SM.length) h += `<div class="card tw" style="margin-top:0"><div class="ct">Overview</div><table class="cmp"><thead><tr>${SH.map((x, i) => `<th class="${i === 0 || i >= 4 ? 't' : ''}">${x}</th>`).join('')}</tr></thead><tbody>${SM.map((r) => `<tr><td class="t">${esc(r.item)}</td><td><b>${esc(r.now)}</b></td><td>${esc(r.prev)}</td><td class="${r.dTone || ''}">${esc(r.d)}</td><td class="t ${r.ev.tone || ''}">${esc(r.ev.t)}</td><td class="t">${esc(r.act)}</td></tr>`).join('')}</tbody></table></div>`;
   if (WR.length) h += `<div class="card" style="margin-top:12px"><div class="ct">Tổng kết F&B</div>${noteHtml(WR)}</div>`;
   MD.T.forEach((t) => { const nc = t.head.length; h += `<div class="card tw" style="margin-top:12px"><div class="ct">${esc(t.title)}</div><table class="cmp"><thead><tr>${t.head.map((x, i) => `<th class="${i === 0 || (t.wide && i === 1) ? 't' : ''}${i === 4 && nc === 6 ? ' sep' : ''}">${esc(x)}</th>`).join('')}</tr></thead><tbody>
     ${t.rows.map((r) => (r.sec ? `<tr class="grp"><td class="t" colspan="${nc}">${esc(r.sec)}</td></tr>` : `<tr class="${r.cls || ''}">${r.cells.map((x, i) => `<td class="${i === 0 || (t.wide && i === 1) ? 't' : ''}${x.sep ? ' sep' : ''} ${x.tone || ''}">${x.b ? `<b>${esc(x.t)}</b>` : esc(x.t)}</td>`).join('')}</tr>`)).join('')}</tbody></table>${t.notes.length ? `<div class="tnote"><div class="cdl">${esc(t.noteTitle || 'Nhận định')}</div>${noteHtml(t.notes)}</div>` : ''}</div>`; });
   if (MD.needCS) h += `<div class="empty" style="margin-top:12px"><span>Doanh thu theo nhóm, giá/phần, combo online theo loại và top 10 cần đủ Concession Sales của cả kỳ này.</span></div>`;
-  S._fnbM = { c, MD, SM }; return h;
+  if (!opt.pl) S._fnbM = { c, MD, SM }; return h;
 }
+
+/* ---------- tab F&B: dùng chung dữ liệu và bộ chọn ngày với Daily ---------- */
+function renderFnb() {
+  const c = S.cin, ci = CI[c]; const days = dDays(c); document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('on', b.dataset.c === c));
+  if (!S.dto) S.dto = dYesterday(); if (!S.dfrom || S.dfrom > S.dto) S.dfrom = S.dto; fillDaySel(days);
+  let h = `<div class="head"><h1>${esc(ci.name)}</h1></div>`;
+  if (!days.length) { $('#main').innerHTML = h + empty('Chưa upload dữ liệu cho rạp này. Tải Marketing Report, Concession Sales và Transactions Export theo ngày.', ['up', 'Tải dữ liệu']); return; }
+  const P = dPeriod(c); const AW = areaWeeks(P).W; const isAM = window.ACC && window.ACC.role === 'AM';
+  if (isAM) h += sec('darea', '01', `Khu vực 6 rạp – ${rngLab(AW[0])}`, '', safeSec(() => areaSection(P)));
+  h += sec('dfnb', isAM ? '02' : '01', `F&B ${ci.short || ci.name} – ${rngLab(AW[0])} so với 2 kỳ liền trước`, `<span class="bts"><button class="btn sm" type="button" data-act="apdf" data-short="1">PDF tóm tắt</button><button class="btn sm pri" type="button" data-act="apdf">PDF đầy đủ ${esc(ci.short || ci.name)}</button></span>`, safeSec(() => fnbTables(c, P)));
+  $('#main').innerHTML = h;
+  const nav = $('#nav'); const ids = [...document.querySelectorAll('#main section.blk')].map((e) => e.id); const NM = { darea: 'Khu vực 6 rạp', dfnb: `F&B ${ci.short || ci.name}` };
+  if (nav) { nav.dataset.k = 'f' + ids.join(); nav.innerHTML = ids.map((id) => `<a data-s="${id}">${NM[id] || id}</a>`).join(''); }
+  dspy(); }
 
 /* ---------- phân tích F&B khu vực (AM) ---------- */
 function areaWeeks(P) {
@@ -3137,7 +3158,7 @@ function areaSection(P) {
   const head = `<thead><tr><th class="t">Rạp</th><th>${A.labs[0]}</th><th>${A.labs[1]}</th><th>${A.labs[2]}</th><th class="sep">± kỳ trước</th><th>${A.lmLab}</th><th>± TB tháng</th><th class="t">Đánh giá</th></tr></thead>`;
   let h = `<div class="card tw"><div class="ct">SPP theo kỳ (nghìn đ/khách)</div><table class="cmp">${head}<tbody>${grp('spp', fs, 'sppDown2', 1)}</tbody></table></div>`;
   h += `<div class="card tw" style="margin-top:12px"><div class="ct">Tỷ lệ Extra và U22 trong combo 1-2 tại quầy</div><table class="cmp">${head}<tbody><tr class="grp"><td class="t" colspan="8">%Extra combo 1-2</td></tr>${grp('ex', fx, 'exDown2', 1)}<tr class="grp"><td class="t" colspan="8">%U22 combo 1-2 (cần Concession Sales)</td></tr>${grp('u22', fx, null, 1)}</tbody></table></div>`;
-  const K = areaKey(A, D); h += `<div class="card" style="margin-top:12px"><div class="ct">=> Khu vực 6 rạp</div><ul class="klist">${K.map((t) => `<li>${t}</li>`).join('')}</ul></div>`;
+  const K = areaKey(A, D); h += `<div class="card" style="margin-top:12px"><div class="ct">=> Khu vực 6 rạp</div><ul class="klist">${K.map((t) => `${liA(t)}${t}</li>`).join('')}</ul></div>`;
   return h;
 }
 function areaKey(A, D) {
@@ -3184,6 +3205,64 @@ async function areaPDF(short) {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); toast('Đã xuất ' + name);
 }
 
+/* ---------- P&L: sức khỏe rạp (scorecard + nhận định theo số liệu) ---------- */
+const plDays = (P) => { const y0 = dYesterday(); return P.M.flatMap((m) => monthDays(`${P.y}-${String(m).padStart(2, '0')}-01`)).filter((d) => d <= y0); };
+const shiftY = (d, k) => { const y = +d.slice(0, 4) + k, r = `${y}${d.slice(4)}`; return d.slice(5) === '02-29' ? `${y}-02-28` : r; };
+function plFnb(P) { const days = plDays(P); if (!days.length) return empty(`Chưa có dữ liệu ngày cho ${plabel(P.y, P.M)}.`, ['up', 'Tải dữ liệu']);
+  const W = [days, [...new Set(days.map((d) => shiftY(d, -1)))], [...new Set(days.map((d) => shiftY(d, -2)))]];
+  if (!dAgg(P.c, days)) return empty(`Chưa có dữ liệu ngày cho ${plabel(P.y, P.M)}. Tải Marketing Report, Concession Sales và Transactions Export theo ngày.`, ['up', 'Tải dữ liệu']);
+  return safeSec(() => fnbRender(P.c, W, { pl: 1 })); }
+
+function healthCheck(P) {
+  const { cur, ly, bp, prev } = P; if (!cur) return '';
+  const g = (o, k) => (o && fin(o[k]) ? o[k] : null), chg = (a, b) => (fin(a) && fin(b) && b ? a / b - 1 : null);
+  const mg = (o) => (o && fin(o.rev) && fin(o.ctrl) && !o.payroll_gap ? o.rev + o.ctrl : null); // doanh thu sau chi phí kiểm soát (chi phí lưu số âm)
+  const mk = marketView(P.c, P); const me = mk && mk.me;
+  // scorecard
+  const R = [['Total Revenue (triệu)', 'rev', 'money', 1], ['Admission', 'adm', 'num', 1], ['ATP', 'atp', 'ratio', 1], ['SPP', 'spp', 'ratio', 1], ['% Strike Rate Admits', 'strike_adm', 'pct', 1],
+    ['Doanh thu sau chi phí kiểm soát (triệu)', 'mg', 'money', 1], ['% Controllable Cost / Revenue', 'cost_rev', 'pctc', 0], ['Staff Cost Per Head', 'scph', 'costr', 0], ['kWh / Operation Hour', 'elec_ph', 'costr', 0]];
+  const val = (o, k) => (k === 'mg' ? mg(o) : g(o, k)); let bad = 0, core = 0; const BADN = [];
+  const rows = R.map(([lab, k, kind, up]) => { const a = val(cur, k), b = val(bp, k), l = val(ly, k), m = val(prev, k);
+    const dB = delta(kind, a, b), dL = delta(kind, a, l), dM = delta(kind, a, m); const ref = fin(dB) ? dB : dL; const isC = COSTK.has(kind) || !up;
+    const ev = !fin(ref) ? '–' : Math.abs(ref) < (kind === 'pct' || kind === 'pctc' ? 0.005 : 0.02) ? 'Ổn định' : (isC ? ref < 0 : ref > 0) ? 'Tốt' : 'Cần chú ý';
+    if (['rev', 'mg', 'cost_rev', 'adm', 'spp'].includes(k) && fin(ref)) { core++; if (ev === 'Cần chú ý') { bad++; BADN.push(lab.replace(/ \(triệu\)/, '')); } }
+    if (![a, b, l, m].some(fin)) return '';
+    const td = (d) => `<td class="${tone(isC && !COSTK.has(kind) ? 'cost' : kind, d)}">${fin(d) ? dfmt(kind, d) : '–'}</td>`;
+    return `<tr><td class="t">${lab}</td><td><b>${fmtK(kind, a)}</b></td>${td(dB)}${td(dL)}${td(dM)}<td class="t ${ev === 'Tốt' ? 'good' : ev === 'Cần chú ý' ? 'bad' : ''}">${ev}</td></tr>`; }).join('')
+    + (me ? `<tr><td class="t">Thị phần admission (cụm ${esc(mk.cluster)})</td><td><b>${pc(me.share)}</b></td><td>–</td><td class="${tone('pct', me.pts_ly)}">${fin(me.pts_ly) ? dpt(me.pts_ly) : '–'}</td><td class="${tone('pct', me.pts_prev)}">${fin(me.pts_prev) ? dpt(me.pts_prev) : '–'}</td><td class="t">${!fin(me.pts_ly) ? '–' : me.pts_ly >= 0.005 ? '<span class="good">Tốt</span>' : me.pts_ly <= -0.005 ? '<span class="bad">Cần chú ý</span>' : 'Ổn định'}</td></tr>` : '');
+  if (me && fin(me.pts_ly)) { core++; if (me.pts_ly <= -0.005) { bad++; BADN.push('thị phần'); } }
+  const tbl = `<div class="card tw"><table class="cmp"><thead><tr><th class="t">Chỉ số</th><th>${plabel(P.y, P.M)}</th><th>vs BP</th><th>vs LY</th><th>vs Last Month</th><th class="t">Đánh giá vs BP</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  // nhận định
+  const N = [];
+  const bridge = (X, nm) => { if (!X || !fin(X.rev) || !fin(cur.rev) || !X.adm || !cur.adm || ![X.nbo, X.nco, cur.nbo, cur.nco].every(fin)) return null;
+    const eA = (cur.adm - X.adm) * ((X.nbo + X.nco) / X.adm), eT = cur.nbo - cur.adm * (X.nbo / X.adm), eS = cur.nco - cur.adm * (X.nco / X.adm), dR = cur.rev - X.rev, eO = dR - eA - eT - eS;
+    return nItem(`Doanh thu ${cmpV(cur.rev, X.rev, 'triệu')} so với ${nm}, gồm:`, [`Do lượng khách (Admission ${dp(chg(cur.adm, X.adm))}): ${dp1(eA)} triệu.`, `Do giá vé bình quân (ATP ${dp(chg(cur.atp, X.atp))}): ${dp1(eT)} triệu.`, `Do F&B mỗi khách (SPP ${dp(chg(cur.spp, X.spp))}): ${dp1(eS)} triệu.`,
+      Math.abs(eO) >= 1 ? `Doanh thu khác: ${dp1(eO)} triệu.` : '', `Yếu tố tác động lớn nhất: ${[['lượng khách', eA], ['ATP', eT], ['SPP', eS]].sort((p, q) => Math.abs(q[1]) - Math.abs(p[1]))[0][0]}.`]); };
+  const bL = bridge(ly, 'cùng kỳ năm trước'); if (bL) N.push(bL); const bB = bridge(bp, 'BP'); if (bB) N.push(bB);
+  if (me && fin(me.adm_ly) && mk.TL) { const dM = chg(mk.TA, mk.TL), dMe = chg(me.adm, me.adm_ly), sh = fin(me.pts_ly) ? me.pts_ly * mk.TA : null;
+    N.push(nItem(`Admission ${dp(dMe)} so với cùng kỳ trong khi thị trường cụm ${mk.cluster} ${dp(dM)}.`, [`Thị phần ${pc(me.share_ly)} → ${pc(me.share)} (${dpt(me.pts_ly)})${fin(sh) ? `, tương đương ${f0(Math.abs(sh))} admission ${sh >= 0 ? 'giành thêm' : 'mất'} so với giữ nguyên thị phần` : ''}.`,
+      dMe < dM - 0.02 ? 'Rạp giảm nhanh hơn (hoặc tăng chậm hơn) thị trường: phần chênh lệch đến từ rạp, không phải do thị trường.' : dMe > dM + 0.02 ? 'Rạp tốt hơn thị trường.' : 'Rạp đi cùng nhịp thị trường.'])); }
+  const m1 = mg(cur), mL = mg(ly), mB = mg(bp);
+  if (fin(m1)) { const sub = [];
+    if (fin(mL)) sub.push(`So với cùng kỳ: ${cmpV(m1, mL, 'triệu')}; biên ${pc(m1 / cur.rev)} so với ${pc(mL / ly.rev)}.`);
+    if (fin(mB)) sub.push(`So với BP: ${cmpV(m1, mB, 'triệu')}.`);
+    if (fin(mL) && fin(chg(cur.rev, ly.rev)) && fin(chg(-cur.ctrl, -ly.ctrl))) { const dr = chg(cur.rev, ly.rev), dc = chg(-cur.ctrl, -ly.ctrl);
+      sub.push(`Doanh thu ${dp(dr)}, chi phí kiểm soát ${dp(dc)}: ${dr < 0 && dc > dr + 0.02 ? 'chi phí chưa giảm theo doanh thu, biên bị thu hẹp' : dr >= 0 && dc > dr + 0.02 ? 'chi phí tăng nhanh hơn doanh thu' : dc <= dr ? 'chi phí đi cùng hoặc thấp hơn nhịp doanh thu' : 'chi phí và doanh thu cùng nhịp'}.`); }
+    N.push(nItem(`Doanh thu sau chi phí kiểm soát ${f1(m1)} triệu (${pc(m1 / cur.rev)} doanh thu).`, sub)); }
+  { const sub = []; const pr = (o) => (o && fin(o.payroll) && fin(o.rev) && !o.payroll_gap ? -o.payroll / o.rev : null);
+    if ([pr(cur), pr(ly)].every(fin)) sub.push(`Payroll / doanh thu ${pc(pr(ly))} → ${pc(pr(cur))}.`);
+    if ([cur.scph, g(ly, 'scph')].every(fin)) sub.push(`Staff Cost Per Head ${f2(Math.abs(ly.scph))} → ${f2(Math.abs(cur.scph))} (${dp(chg(Math.abs(cur.scph), Math.abs(ly.scph)))}).`);
+    if ([cur.elec_ph, g(ly, 'elec_ph')].every(fin)) sub.push(`kWh / Operation Hour ${f2(ly.elec_ph)} → ${f2(cur.elec_ph)} (${dp(chg(cur.elec_ph, ly.elec_ph))}).`);
+    if (cur.payroll_gap) sub.push('Payroll chưa đủ số, các chỉ số chi phí có thể thấp hơn thực tế.');
+    if (sub.length) N.push(nItem('Hiệu quả chi phí so với cùng kỳ:', sub)); }
+  { const sub = []; if ([cur.spp, g(ly, 'spp')].every(fin)) sub.push(`SPP ${cmpV(cur.spp, ly.spp, 'nghìn đ')}.`); if ([cur.strike_adm, g(ly, 'strike_adm')].every(fin)) sub.push(`% Strike Rate Admits ${cmpP(cur.strike_adm, ly.strike_adm)}.`);
+    if (sub.length) N.push(nItem('F&B so với cùng kỳ (chi tiết ở mục F&B):', sub)); }
+  const st = !core ? null : bad === 0 ? 'Khỏe' : bad === 1 ? 'Ổn, có 1 điểm cần chú ý' : bad === 2 ? 'Cần chú ý' : 'Báo động';
+  if (st) N.unshift(nItem(`=> Sức khỏe rạp: ${st} (${bad}/${core} chỉ số chính cần chú ý${bad ? ': ' + BADN.join(', ') : ''}).`));
+  const ft = '<div class="cs" style="margin-top:6px">Đánh giá theo BP; chỉ số chưa có BP thì theo cùng kỳ năm trước. Chi phí: giảm là Tốt.</div>';
+  return tbl + ft + (N.length ? `<div class="card" style="margin-top:12px"><div class="ct">Nhận định</div>${noteHtml(N)}</div>` : '');
+}
+
 /* 2 lớp đăng nhập. Mật khẩu chỉ lưu dạng SHA-256(user:pass).
    Lớp 1 – màn hình ngoài: vào dashboard (Daily). Lớp 2 – khi chuyển sang P&L: tài khoản rạp nhập thêm tài khoản P&L của đúng rạp đó; AM không phải nhập lại. */
 const ACCOUNTS = [
@@ -3224,11 +3303,11 @@ function loginBox({ title, sub, users, back, onOk }) {
 }
 function lockScreen() { loginBox({ title: 'Cinema Dashboard', sub: 'Daily CO · P&L Monthly', users: ACCOUNTS, onOk: startApp }); }
 // Lớp 2: chuyển sang P&L
-function needLogin() {
+function needLogin(to = 'pl') {
   const acc = window.ACC; if (!acc) return lockScreen();
-  if (acc.role === 'AM' || window.PLOK) { window.PLOK = true; S.mode = 'pl'; render(); window.scrollTo(0, 0); return; }
-  loginBox({ title: 'P&L Monthly', sub: `Nhập tài khoản P&L của ${esc(acc.label)}`, users: PL_ACCOUNTS.filter((a) => a.role === acc.role), back: () => { S.mode = 'daily'; render(); },
-    onOk: () => { window.PLOK = true; S.mode = 'pl'; render(); window.scrollTo(0, 0); } });
+  if (acc.role === 'AM' || window.PLOK) { window.PLOK = true; S.mode = to; render(); window.scrollTo(0, 0); return; }
+  loginBox({ title: to === 'fnb' ? 'F&B' : 'P&L Monthly', sub: `Nhập tài khoản P&L của ${esc(acc.label)} (dùng chung cho P&L và F&B)`, users: PL_ACCOUNTS.filter((a) => a.role === acc.role), back: () => { S.mode = 'daily'; render(); },
+    onOk: () => { window.PLOK = true; S.mode = to; render(); window.scrollTo(0, 0); } });
 }
 function startApp(acc) {
   window.ACC = acc; window.PLOK = acc.role === 'AM'; S.mode = 'daily'; S.dfrom = S.dto = dYesterday(); // mỗi lần đăng nhập: xem ngày hôm qua
